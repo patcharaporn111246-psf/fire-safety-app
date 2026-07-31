@@ -36,6 +36,10 @@
   header h1{font-size:15px;margin:0;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px;}
   header h1 .tag{background:var(--red);color:#fff;font-size:10.5px;padding:2px 8px;border-radius:3px;letter-spacing:.5px;font-weight:700;}
   header .sub{font-size:11px;color:#aab3bd;margin-top:2px;}
+  .online-status{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:5px 9px;border-radius:20px;background:rgba(255,255,255,.10);white-space:nowrap;}
+  .online-status::before{content:"";width:8px;height:8px;border-radius:50%;background:#d99a2b;}
+  .online-status.online::before{background:#54c985;box-shadow:0 0 0 3px rgba(84,201,133,.16);}
+  .online-status.offline::before{background:#ff786b;}
   .month-pick{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.08);border-radius:8px;padding:4px 4px 4px 10px;}
   .month-pick label{font-size:11px;color:#c8ceD4;}
   .month-pick input{border:none;background:transparent;color:#fff;font-size:13px;font-family:inherit;padding:4px;}
@@ -184,6 +188,7 @@
         <h1><span id="hTitle">ตรวจเช็คถังดับเพลิง</span> <span class="tag">ESC# 1-2</span></h1>
         <div class="sub" id="hSub">32 จุดติดตั้ง · ตรวจเช็คทุกเดือน</div>
       </div>
+      <div id="onlineStatus" class="online-status">กำลังเชื่อมต่อออนไลน์…</div>
       <div class="month-pick">
         <label>ประจำเดือน</label>
         <input type="month" id="monthSelect">
@@ -360,34 +365,99 @@ const IMAGES = {
 </script>
 <script>
 
-/* ===================== Universal storage layer =====================
-   Works both inside Claude.ai (window.storage, shared across the team)
-   and as a standalone downloaded HTML file (falls back to this browser's
-   localStorage so data is never silently lost). Every write goes to both
-   when possible; every read prefers the remote copy but always has a
-   local fallback. */
+/* ===================== Supabase + local cache storage =====================
+   Supabase table required (run once in SQL Editor):
+
+   create table if not exists public.fireapp_storage (
+     storage_key text primary key,
+     value jsonb not null,
+     updated_at timestamptz not null default now()
+   );
+   alter table public.fireapp_storage enable row level security;
+   create policy "fireapp public read" on public.fireapp_storage for select to anon using (true);
+   create policy "fireapp public insert" on public.fireapp_storage for insert to anon with check (true);
+   create policy "fireapp public update" on public.fireapp_storage for update to anon using (true) with check (true);
+*/
+const SUPABASE_URL = "https://luvmevoqwccifbqetnsu.supabase.co";
+const SUPABASE_KEY = "sb_publishable_IeFCoaxXlWKP1UohFfX9xA_aEEGycf6";
+const SUPABASE_TABLE = 'fireapp_storage';
 const LOCAL_PREFIX = 'fireapp:';
-const HAS_REMOTE = (typeof window !== 'undefined') && !!window.storage;
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
+});
+let remoteOnline = false;
+let lastRemoteError = '';
+
+function setOnlineStatus(state, detail=''){
+  remoteOnline = state === 'online';
+  lastRemoteError = detail || '';
+  const el = document.getElementById('onlineStatus');
+  if(!el) return;
+  el.classList.remove('online','offline');
+  if(state === 'online'){
+    el.classList.add('online');
+    el.textContent = 'เชื่อมต่อออนไลน์แล้ว';
+    el.title = 'ข้อมูลซิงก์กับ Supabase และเห็นร่วมกันทุกอุปกรณ์';
+  }else if(state === 'offline'){
+    el.classList.add('offline');
+    el.textContent = 'ออฟไลน์ — รอซิงก์';
+    el.title = detail || 'ยังเชื่อมต่อ Supabase ไม่ได้';
+  }else{
+    el.textContent = 'กำลังเชื่อมต่อออนไลน์…';
+  }
+}
+
+async function checkSupabaseConnection(){
+  setOnlineStatus('checking');
+  try{
+    const { error } = await supabaseClient.from(SUPABASE_TABLE).select('storage_key').limit(1);
+    if(error) throw error;
+    setOnlineStatus('online');
+    return true;
+  }catch(e){
+    console.error('Supabase connection error:', e);
+    setOnlineStatus('offline', e.message || String(e));
+    return false;
+  }
+}
 
 async function storeGet(key){
-  if(HAS_REMOTE){
-    try{
-      const r = await window.storage.get(key, true);
-      if(r && r.value !== undefined && r.value !== null){
-        try{ localStorage.setItem(LOCAL_PREFIX+key, r.value); }catch(e){}
-        return r.value;
-      }
-    }catch(e){ /* fall through to local */ }
+  try{
+    const { data, error } = await supabaseClient
+      .from(SUPABASE_TABLE)
+      .select('value')
+      .eq('storage_key', key)
+      .maybeSingle();
+    if(error) throw error;
+    setOnlineStatus('online');
+    if(data && data.value !== undefined && data.value !== null){
+      const value = typeof data.value === 'string' ? data.value : JSON.stringify(data.value);
+      try{ localStorage.setItem(LOCAL_PREFIX+key, value); }catch(e){}
+      return value;
+    }
+  }catch(e){
+    console.error('Supabase read error:', key, e);
+    setOnlineStatus('offline', e.message || String(e));
   }
   try{ return localStorage.getItem(LOCAL_PREFIX+key); }catch(e){ return null; }
 }
+
 async function storeSet(key, value){
-  let ok = false;
-  if(HAS_REMOTE){
-    try{ await window.storage.set(key, value, true); ok = true; }catch(e){ /* ignore, still save locally */ }
+  try{ localStorage.setItem(LOCAL_PREFIX+key, value); }catch(e){}
+  try{
+    const { error } = await supabaseClient.from(SUPABASE_TABLE).upsert({
+      storage_key: key,
+      value,
+      updated_at: new Date().toISOString()
+    }, { onConflict:'storage_key' });
+    if(error) throw error;
+    setOnlineStatus('online');
+    return true;
+  }catch(e){
+    console.error('Supabase write error:', key, e);
+    setOnlineStatus('offline', e.message || String(e));
+    return false;
   }
-  try{ localStorage.setItem(LOCAL_PREFIX+key, value); ok = true; }catch(e){}
-  return ok;
 }
 
 /* ===================== Config ===================== */
@@ -492,7 +562,7 @@ async function loadAllForLayer(layer){
 }
 async function saveRecord(layer, num, rec){
   dataCache[layer][num] = rec;
-  await storeSet(CONFIG[layer].storagePrefix+':'+num, JSON.stringify(rec));
+  return await storeSet(CONFIG[layer].storagePrefix+':'+num, JSON.stringify(rec));
 }
 
 async function loadLayoutFor(layer){
@@ -909,7 +979,12 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
   localStorage.setItem(LOCAL_PREFIX+'lastInspector', inspector);
   const now = new Date().toISOString();
   let overallFail = false;
+  let savedOnline = false;
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'กำลังบันทึกขึ้น Supabase…';
 
+  try{
   if(currentLayer==='cab'){
     const rec = await loadRecord('cab', currentNum);
     rec.history = rec.history || {};
@@ -932,9 +1007,9 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
     h.date = now;
     h.inspector = inspector;
     rec.history[currentMonth] = h;
-    await saveRecord('cab', currentNum, rec);
+    savedOnline = await saveRecord('cab', currentNum, rec);
     overallFail = h.result !== 'pass';
-    document.getElementById('saveMsg').textContent = 'บันทึกเรียบร้อย ✓';
+    document.getElementById('saveMsg').textContent = savedOnline ? 'บันทึกออนไลน์เรียบร้อย ✓' : 'บันทึกสำรองในเครื่องแล้ว — รอซิงก์ออนไลน์';
     renderHistoryCab(rec);
   } else {
     if(!currentResult){ toast('กรุณาเลือกผลการตรวจเช็ค (ผ่าน / พบปัญหา)'); return; }
@@ -950,9 +1025,9 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
       photo: currentPhoto, date: now,
       inspector
     };
-    await saveRecord('ext', currentNum, rec);
+    savedOnline = await saveRecord('ext', currentNum, rec);
     overallFail = currentResult !== 'pass';
-    document.getElementById('saveMsg').textContent = 'บันทึกเรียบร้อย ✓';
+    document.getElementById('saveMsg').textContent = savedOnline ? 'บันทึกออนไลน์เรียบร้อย ✓' : 'บันทึกสำรองในเครื่องแล้ว — รอซิงก์ออนไลน์';
     renderHistorySimple(rec);
   }
 
@@ -960,8 +1035,12 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
 
   if(overallFail){
     showDefectAlert();
-  } else {
+  } else if(savedOnline) {
     setTimeout(()=>{ document.getElementById('overlay').classList.remove('show'); }, 700);
+  }
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'บันทึกผลการตรวจเช็ค';
   }
 });
 
@@ -1434,14 +1513,13 @@ monthSelect.addEventListener('change', ()=>{
   document.getElementById('planImg').src = IMAGES.ext;
   if('NDEFReader' in window){ document.getElementById('scanNfcBtn').style.display = 'inline-block'; }
   buildDataToolsUI();
+  await checkSupabaseConnection();
   await loadPointList('ext'); await loadPointList('cab');
   await loadChecklist('ext'); await loadChecklist('cab');
   updateCounts();
   await ensureLayerLoaded('ext');
   await refreshAll();
-  if(!HAS_REMOTE){
-    toast('เปิดใช้งานแบบไฟล์เดี่ยว: ข้อมูลจะถูกบันทึกไว้ในเบราว์เซอร์นี้เท่านั้น');
-  }
+  toast(remoteOnline ? 'เชื่อมต่อ Supabase แล้ว — ข้อมูลซิงก์ออนไลน์' : 'ยังเชื่อมต่อ Supabase ไม่ได้ — ตรวจสอบตารางและ RLS');
 })();
 
 </script>
@@ -1458,47 +1536,6 @@ if ("serviceWorker" in navigator) {
   });
 }
 </script>
-
-<script>
-  const SUPABASE_URL = "https://luvmevoqwccifbqetnsu.supabase.co";
-
-  const SUPABASE_KEY = "sb_publishable_IeFCoaxXlWKP1UohFfX9xA_aEEGycf6";
-
-  const supabaseClient = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-  );
-</script>
-
-<script>
-async function testSupabaseSave() {
-  const { data, error } = await supabaseClient
-    .from("inspections")
-    .insert([
-      {
-        equipment_id: "TEST-001",
-        inspection_type: "ทดสอบ",
-        overall_status: "ผ่าน",
-        inspector_name: "ผู้ทดสอบ",
-        employee_id: "TEST"
-      }
-    ])
-    .select();
-
-  if (error) {
-    console.error(error);
-    alert("บันทึกไม่สำเร็จ: " + error.message);
-    return;
-  }
-
-  console.log(data);
-  alert("เชื่อมต่อ Supabase และบันทึกสำเร็จ");
-}
-</script>
-
-<button type="button" onclick="testSupabaseSave()">
-  ทดสอบบันทึก Supabase
-</button>
 
 </body>
 </html>
