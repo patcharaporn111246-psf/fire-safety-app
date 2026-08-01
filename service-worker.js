@@ -1,6 +1,6 @@
-const CACHE_NAME = "fire-safety-v2";
+const CACHE_NAME = "fire-safety-v3";
 
-const FILES_TO_CACHE = [
+const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
@@ -10,63 +10,81 @@ const FILES_TO_CACHE = [
 
 self.addEventListener("install", event => {
   self.skipWaiting();
+
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(FILES_TO_CACHE))
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(APP_SHELL))
   );
 });
 
 self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys.map(key => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      )
-    )
+    Promise.all([
+      caches.keys().then(names =>
+        Promise.all(
+          names
+            .filter(name => name !== CACHE_NAME)
+            .map(name => caches.delete(name))
+        )
+      ),
+      self.clients.claim()
+    ])
   );
-
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
+  const request = event.request;
 
-  // หน้าเว็บ โหลดจากอินเทอร์เน็ตก่อนเสมอ
-  if (
-    event.request.mode === "navigate" ||
-    event.request.url.endsWith("/") ||
-    event.request.url.endsWith("index.html")
-  ) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put("./index.html", copy);
-          });
-          return response;
-        })
-        .catch(() => caches.match("./index.html"))
-    );
+  if (request.method !== "GET") {
     return;
   }
 
-  // ไฟล์อื่นใช้ cache ก่อน
-  event.respondWith(
-    caches.match(event.request).then(response => {
-      return (
-        response ||
-        fetch(event.request).then(networkResponse => {
-          const copy = networkResponse.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, copy);
-          });
-          return networkResponse;
+  const url = new URL(request.url);
+
+  // หน้าเว็บหลักให้โหลดข้อมูลล่าสุดจากอินเทอร์เน็ตก่อน
+  if (
+    request.mode === "navigate" ||
+    url.pathname.endsWith("/") ||
+    url.pathname.endsWith("/index.html")
+  ) {
+    event.respondWith(
+      fetch(request, { cache: "no-store" })
+        .then(response => {
+          if (response.ok) {
+            caches.open(CACHE_NAME).then(cache => {
+              cache.put("./index.html", response.clone());
+            });
+          }
+
+          return response;
         })
-      );
-    })
-  );
+        .catch(() =>
+          caches.match("./index.html")
+            .then(response => response || caches.match("./"))
+        )
+    );
+
+    return;
+  }
+
+  // ไฟล์อื่นใช้จาก Cache ก่อน แล้วอัปเดตเบื้องหลัง
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      caches.match(request).then(cachedResponse => {
+        const freshResponse = fetch(request)
+          .then(response => {
+            if (response.ok) {
+              caches.open(CACHE_NAME).then(cache => {
+                cache.put(request, response.clone());
+              });
+            }
+
+            return response;
+          })
+          .catch(() => cachedResponse);
+
+        return cachedResponse || freshResponse;
+      })
+    );
+  }
 });
