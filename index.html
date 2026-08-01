@@ -698,7 +698,7 @@ function renderMarkers(){
     } else if(removeMode){
       el.addEventListener('click', ()=>removePointAt(layer, num));
     } else {
-      el.addEventListener('click', ()=>openSheet(num));
+      el.addEventListener('click', ()=>{ openSheet(num).catch(err=>{ console.error(err); document.getElementById('overlay').classList.add('show'); }); });
     }
     wrap.appendChild(el);
   });
@@ -1005,39 +1005,54 @@ function renderHistoryCab(rec){
 /* ===================== Shared sheet open/save ===================== */
 async function openSheet(num){
   currentNum = num;
+  const overlay = document.getElementById('overlay');
+  const saveMsg = document.getElementById('saveMsg');
+
+  // แสดง Popup ทันที ไม่ต้องรอโหลดข้อมูลจาก Supabase
   document.getElementById('sheetNum').textContent = num;
   document.getElementById('sheetBadge').textContent = num;
   document.getElementById('sheetMonthLabel').textContent = currentMonth;
   document.getElementById('defectAlertBox').style.display = 'none';
+  saveMsg.textContent = 'กำลังโหลดข้อมูล…';
+  overlay.classList.add('show');
 
-  if(currentLayer==='cab') await openSheetCab(num);
-  else await openSheetExt(num);
+  try{
+    if(currentLayer==='cab') await openSheetCab(num);
+    else await openSheetExt(num);
 
-  // Audit trail: prefill last used inspector for convenience
-  const lastInspector = localStorage.getItem(LOCAL_PREFIX+'lastInspector') || '';
-  const rec = await loadRecord(currentLayer, num);
-  const monthRec = (rec.history && rec.history[currentMonth]) || null;
-  document.getElementById('fldInspector').value = (monthRec && monthRec.inspector) || lastInspector;
+    // Audit trail: prefill last used inspector for convenience
+    const lastInspector = localStorage.getItem(LOCAL_PREFIX+'lastInspector') || '';
+    const rec = await loadRecord(currentLayer, num);
+    const monthRec = (rec.history && rec.history[currentMonth]) || null;
+    document.getElementById('fldInspector').value = (monthRec && monthRec.inspector) || lastInspector;
 
-  // QR code for this point
-  const qrData = 'FIREAPP:'+currentLayer+':'+num;
-  document.getElementById('qrPointImg').src = qrImgUrl(qrData);
-  const nfcBtn = document.getElementById('writeNfcBtn');
-  if('NDEFReader' in window){
-    nfcBtn.style.display = 'inline-block';
-    nfcBtn.onclick = async ()=>{
-      try{
-        const writer = new NDEFReader();
-        await writer.write({records:[{recordType:'text', data: qrData}]});
-        toast('เขียนข้อมูลลง NFC Tag เรียบร้อย — นำไปติดที่อุปกรณ์ได้เลย');
-      }catch(e){ toast('เขียน NFC ไม่สำเร็จ: แตะโทรศัพท์ให้ชิด NFC Tag แล้วลองใหม่'); }
-    };
-  } else {
-    nfcBtn.style.display = 'none';
+    // QR code แยกจากการโหลดข้อมูล เพื่อไม่ให้ QR ล้มแล้ว Popup หาย
+    try{
+      const qrData = 'FIREAPP:'+currentLayer+':'+num;
+      document.getElementById('qrPointImg').src = qrImgUrl(qrData);
+      const nfcBtn = document.getElementById('writeNfcBtn');
+      if('NDEFReader' in window){
+        nfcBtn.style.display = 'inline-block';
+        nfcBtn.onclick = async ()=>{
+          try{
+            const writer = new NDEFReader();
+            await writer.write({records:[{recordType:'text', data: qrData}]});
+            toast('เขียนข้อมูลลง NFC Tag เรียบร้อย — นำไปติดที่อุปกรณ์ได้เลย');
+          }catch(e){ toast('เขียน NFC ไม่สำเร็จ: แตะโทรศัพท์ให้ชิด NFC Tag แล้วลองใหม่'); }
+        };
+      } else {
+        nfcBtn.style.display = 'none';
+      }
+    }catch(qrError){
+      console.warn('QR setup error:', qrError);
+    }
+
+    saveMsg.textContent = '';
+  }catch(error){
+    console.error('openSheet error:', error);
+    saveMsg.textContent = 'โหลดข้อมูลบางส่วนไม่สำเร็จ แต่ยังสามารถกรอกและบันทึกใหม่ได้';
+    toast('เปิดหน้าตรวจแล้ว แต่โหลดข้อมูลเดิมบางส่วนไม่สำเร็จ');
   }
-
-  document.getElementById('saveMsg').textContent = '';
-  document.getElementById('overlay').classList.add('show');
 }
 
 document.getElementById('closeSheet').addEventListener('click', ()=>{
