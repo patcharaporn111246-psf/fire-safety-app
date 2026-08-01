@@ -176,9 +176,24 @@
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--steel-dark);color:#fff;
     padding:10px 18px;border-radius:20px;font-size:13px;z-index:100;opacity:0;transition:opacity .3s;pointer-events:none;}
   .toast.show{opacity:1;}
+
+  /* ---- Dashboard / multi-photo ---- */
+  .dashboard-wrap{padding:14px 12px 30px;}
+  .dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px;}
+  @media(min-width:760px){.dash-grid{grid-template-columns:repeat(5,minmax(0,1fr));}}
+  .dash-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+  .dash-card .n{font-size:25px;font-weight:800;margin-top:5px}.dash-card .l{font-size:11.5px;color:#777}.dash-card.pass .n{color:var(--green)}.dash-card.fail .n{color:var(--red)}.dash-card.due .n{color:var(--amber)}
+  .dash-section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}.dash-section h3{font-size:14px;margin:0 0 10px}
+  .dash-row{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding:9px 0;font-size:12.5px}.dash-row:last-child{border-bottom:none}.dash-row .grow{flex:1}.dash-pill{font-weight:700;padding:3px 8px;border-radius:15px}.dash-pill.fail{background:#fbe7e4;color:var(--red-dark)}
+  .photo-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0;}
+  .photo-thumb{position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#f5f5f5;aspect-ratio:1/1}.photo-thumb img{width:100%;height:100%;object-fit:cover;cursor:pointer}.photo-thumb button{position:absolute;right:4px;top:4px;width:25px;height:25px;border:none;border-radius:50%;background:rgba(0,0,0,.65);color:white;cursor:pointer}
+  .hist-item{cursor:pointer}.hist-photo-count{font-size:10px;color:#777;margin-top:2px}
+  .pdf-report{font-family:"Noto Sans Thai","Tahoma",sans-serif;color:#111;background:#fff;padding:18px;width:1120px}.pdf-report h1{font-size:22px;margin:0}.pdf-report .meta{font-size:12px;color:#555;margin:5px 0 14px}.pdf-report table{width:100%;border-collapse:collapse}.pdf-report th,.pdf-report td{border:1px solid #888;padding:5px;font-size:10px;vertical-align:top}.pdf-report th{background:#eee}.pdf-report img{width:70px;height:70px;object-fit:cover;margin:2px;border-radius:3px}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -208,6 +223,7 @@
   <nav class="tabs">
     <button class="active" data-view="map">แผนผัง</button>
     <button data-view="list">รายการ</button>
+    <button data-view="dashboard">Dashboard</button>
   </nav>
 
   <main>
@@ -243,6 +259,13 @@
         <div class="chip" data-f="fail">⚠ พบปัญหา</div>
       </div>
       <div class="list-wrap" id="listWrap"></div>
+    </div>
+    <div class="view" id="view-dashboard">
+      <div class="dashboard-wrap">
+        <div class="dash-grid" id="dashboardCards"></div>
+        <div class="dash-section"><h3>สรุปแยกประเภท</h3><div id="dashboardBreakdown"></div></div>
+        <div class="dash-section"><h3>⚠ รายการที่พบปัญหา</h3><div id="dashboardDefects"></div></div>
+      </div>
     </div>
   </main>
 </div>
@@ -310,13 +333,13 @@
       </div>
 
       <div class="field">
-        <label>แนบรูปป้ายตรวจสอบ (Inspection Tag)</label>
+        <label>แนบรูปภาพ (เลือกได้หลายรูป)</label>
         <div class="photo-box" id="photoBox">
           <div class="ph-empty" id="phEmpty">ยังไม่มีรูปป้ายตรวจสอบ</div>
           <img id="phImg" style="display:none">
           <br>
-          <label class="upl">📷 ถ่าย/แนบรูปป้าย
-            <input type="file" id="fldPhoto" accept="image/*" capture="environment">
+          <label class="upl">📷 ถ่าย/เลือกรูปหลายรูป
+            <input type="file" id="fldPhoto" accept="image/*" multiple>
           </label>
         </div>
       </div>
@@ -381,6 +404,7 @@ const IMAGES = {
 const SUPABASE_URL = "https://luvmevoqwccifbqetnsu.supabase.co";
 const SUPABASE_KEY = "sb_publishable_IeFCoaxXlWKP1UohFfX9xA_aEEGycf6";
 const SUPABASE_TABLE = 'fireapp_storage';
+const SUPABASE_PHOTO_BUCKET = 'inspection-photos';
 const LOCAL_PREFIX = 'fireapp:';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession:false, autoRefreshToken:false, detectSessionInUrl:false }
@@ -460,6 +484,33 @@ async function storeSet(key, value){
   }
 }
 
+function dataUrlToBlob(dataUrl){
+  const [head, body] = dataUrl.split(',');
+  const mime = (head.match(/data:([^;]+)/)||[])[1] || 'image/jpeg';
+  const bin = atob(body); const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new Blob([arr], {type:mime});
+}
+function safePathPart(v){ return String(v).replace(/[^a-zA-Z0-9_-]/g,'-'); }
+async function uploadPendingPhotos(layer, num, month, photos){
+  const result=[];
+  for(let i=0;i<(photos||[]).length;i++){
+    const src=photos[i];
+    if(!src || !src.startsWith('data:')){ if(src) result.push(src); continue; }
+    const blob=dataUrlToBlob(src);
+    const path=`${safePathPart(layer)}/${safePathPart(num)}/${safePathPart(month)}/${Date.now()}-${i}-${Math.random().toString(36).slice(2,8)}.jpg`;
+    const {error}=await supabaseClient.storage.from(SUPABASE_PHOTO_BUCKET).upload(path, blob, {contentType:'image/jpeg', upsert:false});
+    if(error) throw error;
+    const {data}=supabaseClient.storage.from(SUPABASE_PHOTO_BUCKET).getPublicUrl(path);
+    result.push(data.publicUrl);
+  }
+  return result;
+}
+function getHistoryPhotos(h){
+  if(Array.isArray(h?.photos)) return h.photos.filter(Boolean);
+  return h?.photo ? [h.photo] : [];
+}
+
 /* ===================== Config ===================== */
 const CONFIG = {
   ext: {
@@ -513,7 +564,8 @@ let currentLayer = 'ext';
 let currentMonth = new Date().toISOString().slice(0,7);
 let currentNum = null;
 let currentResult = null;
-let currentPhoto = null;
+let currentPhoto = null; // compatibility with old records
+let currentPhotos = [];
 let dataCache = { ext:{}, cab:{} };
 let posOverride = { ext:{}, cab:{} };
 let listFilter = 'all';
@@ -747,6 +799,7 @@ async function refreshAll(){
   renderProgress();
   renderList();
   updateCounts();
+  if(document.getElementById('dashboardCards')) renderDashboard();
 }
 
 function resizeImage(file, maxW, quality){
@@ -793,7 +846,8 @@ async function openSheetExt(num){
 
   const monthRec = (rec.history && rec.history[currentMonth]) || null;
   currentResult = monthRec ? monthRec.result : null;
-  currentPhoto = monthRec ? monthRec.photo || null : null;
+  currentPhotos = monthRec ? getHistoryPhotos(monthRec) : [];
+  currentPhoto = currentPhotos[0] || null;
   document.getElementById('fldNote').value = monthRec ? (monthRec.note||'') : '';
 
   document.querySelectorAll('#checklist input[type=checkbox]').forEach(cb=>{
@@ -810,9 +864,17 @@ function updateResultButtons(){
   f.classList.toggle('sel-fail', currentResult==='fail');
 }
 function updatePhotoPreview(){
-  const img = document.getElementById('phImg'), empty = document.getElementById('phEmpty');
-  if(currentPhoto){ img.src = currentPhoto; img.style.display='block'; empty.style.display='none'; }
-  else { img.style.display='none'; empty.style.display='block'; }
+  const img=document.getElementById('phImg'), empty=document.getElementById('phEmpty'), gallery=document.getElementById('photoGallery');
+  img.style.display='none'; gallery.innerHTML='';
+  currentPhotos=(currentPhotos||[]).filter(Boolean); currentPhoto=currentPhotos[0]||null;
+  empty.style.display=currentPhotos.length?'none':'block';
+  currentPhotos.forEach((src,i)=>{
+    const d=document.createElement('div'); d.className='photo-thumb';
+    d.innerHTML=`<img src="${src}" title="คลิกเพื่อดูรูปเต็ม"><button type="button" title="ลบรูป">×</button>`;
+    d.querySelector('img').onclick=()=>window.open(src,'_blank');
+    d.querySelector('button').onclick=()=>{currentPhotos.splice(i,1);updatePhotoPreview();};
+    gallery.appendChild(d);
+  });
 }
 function renderHistorySimple(rec){
   const list = document.getElementById('historyList');
@@ -824,25 +886,34 @@ function renderHistorySimple(rec){
     const div = document.createElement('div');
     div.className = 'hist-item';
     div.innerHTML = `
-      ${h.photo ? `<img src="${h.photo}">` : '<div style="width:36px;height:36px;border-radius:6px;background:#eee;"></div>'}
+      ${getHistoryPhotos(h)[0] ? `<img src="${getHistoryPhotos(h)[0]}">` : '<div style="width:36px;height:36px;border-radius:6px;background:#eee;"></div>'}
       <div class="hd">
         <div>${m}${h.inspector ? ' · '+h.inspector : ''}</div>
-        <div style="color:#999;">${h.date ? new Date(h.date).toLocaleString('th-TH') : ''}</div>
+        <div style="color:#999;">${h.date ? new Date(h.date).toLocaleString('th-TH') : ''}</div><div class="hist-photo-count">รูป ${getHistoryPhotos(h).length} รูป · คลิกดูรายละเอียด</div>
       </div>
       <div class="hres ${h.result==='pass'?'pass':'fail'}">${h.result==='pass' ? 'ผ่าน' : 'พบปัญหา'}</div>
     `;
+    div.onclick=()=>showHistoryDetail(m,h);
     list.appendChild(div);
   });
+}
+function showHistoryDetail(month,h){
+  const photos=getHistoryPhotos(h);
+  const win=window.open('','_blank');
+  const details=h.cabinet ? `ตู้น้ำ: ${h.cabinet.result==='pass'?'ผ่าน':'พบปัญหา'} | ถังในตู้: ${h.tank?.result==='pass'?'ผ่าน':'พบปัญหา'}` : `ผลตรวจ: ${h.result==='pass'?'ผ่าน':'พบปัญหา'}`;
+  win.document.write(`<meta charset="utf-8"><title>ประวัติ ${month}</title><style>body{font-family:Tahoma,sans-serif;padding:20px;max-width:900px;margin:auto}img{max-width:100%;max-height:650px;display:block;margin:12px auto;border-radius:8px}.card{border:1px solid #ddd;border-radius:10px;padding:15px}</style><h2>ประวัติการตรวจ ${month}</h2><div class="card"><p>${details}</p><p>ผู้ตรวจ: ${escHtml(h.inspector||'-')}</p><p>หมายเหตุ: ${escHtml(h.note||'-')}</p><p>วันที่บันทึก: ${h.date?new Date(h.date).toLocaleString('th-TH'):'-'}</p></div>${photos.map((x,i)=>`<h3>รูปที่ ${i+1}</h3><img src="${x}">`).join('')||'<p>ไม่มีรูปภาพ</p>'}`);
 }
 
 document.getElementById('btnPass').addEventListener('click', ()=>{ currentResult='pass'; updateResultButtons(); });
 document.getElementById('btnFail').addEventListener('click', ()=>{ currentResult='fail'; updateResultButtons(); });
 
 document.getElementById('fldPhoto').addEventListener('change', async (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  try{ currentPhoto = await resizeImage(file, 900, 0.6); updatePhotoPreview(); }
-  catch(err){ toast('อ่านรูปภาพไม่สำเร็จ'); }
+  const files=[...e.target.files]; if(!files.length) return;
+  try{
+    toast('กำลังเตรียมรูปภาพ...');
+    for(const file of files){ currentPhotos.push(await resizeImage(file, 1200, 0.72)); }
+    updatePhotoPreview(); e.target.value=''; toast(`เพิ่มรูปแล้ว ${files.length} รูป`);
+  }catch(err){ console.error(err); toast('อ่านรูปภาพไม่สำเร็จ'); }
 });
 
 /* ===================== Sheet (dual-form: cab) ===================== */
@@ -903,7 +974,8 @@ async function openSheetCab(num){
     }
     (d.checks||[]).forEach(i=>{ const q = box.querySelector(`[data-i="${i}"]`); if(q) q.checked = true; });
   });
-  currentPhoto = h.photo || null;
+  currentPhotos = getHistoryPhotos(h);
+  currentPhoto = currentPhotos[0] || null;
   document.getElementById('fldNote').value = h.note || '';
   updatePhotoPreview();
   renderHistoryCab(rec);
@@ -918,10 +990,10 @@ function renderHistoryCab(rec){
     const div = document.createElement('div');
     div.className = 'hist-item';
     div.innerHTML = `
-      ${h.photo ? `<img src="${h.photo}">` : '<div style="width:36px;height:36px;border-radius:6px;background:#eee;"></div>'}
+      ${getHistoryPhotos(h)[0] ? `<img src="${getHistoryPhotos(h)[0]}">` : '<div style="width:36px;height:36px;border-radius:6px;background:#eee;"></div>'}
       <div class="hd">
         <div>${m}${h.inspector ? ' · '+h.inspector : ''} (ตู้: ${h.cabinet?.result==='pass'?'ผ่าน':'พบปัญหา'} / ถัง: ${h.tank?.result==='pass'?'ผ่าน':'พบปัญหา'})</div>
-        <div style="color:#999;">${h.date ? new Date(h.date).toLocaleString('th-TH') : ''}</div>
+        <div style="color:#999;">${h.date ? new Date(h.date).toLocaleString('th-TH') : ''}</div><div class="hist-photo-count">รูป ${getHistoryPhotos(h).length} รูป · คลิกดูรายละเอียด</div>
       </div>
       <div class="hres ${h.result==='pass'?'pass':'fail'}">${h.result==='pass' ? 'ผ่าน' : 'พบปัญหา'}</div>
     `;
@@ -985,6 +1057,10 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
   saveBtn.textContent = 'กำลังบันทึกขึ้น Supabase…';
 
   try{
+  saveBtn.textContent = 'กำลังอัปโหลดรูปภาพ…';
+  const uploadedPhotos = await uploadPendingPhotos(currentLayer, currentNum, currentMonth, currentPhotos);
+  currentPhotos = uploadedPhotos; currentPhoto = currentPhotos[0] || null;
+  saveBtn.textContent = 'กำลังบันทึกขึ้น Supabase…';
   if(currentLayer==='cab'){
     const rec = await loadRecord('cab', currentNum);
     rec.history = rec.history || {};
@@ -1003,7 +1079,8 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
     if(!ok){ toast('กรุณาเลือกผลตรวจทั้งตู้น้ำและถังในตู้'); return; }
     h.result = (h.cabinet.result==='pass' && h.tank.result==='pass') ? 'pass' : 'fail';
     h.note = document.getElementById('fldNote').value.trim();
-    h.photo = currentPhoto;
+    h.photos = currentPhotos;
+    h.photo = currentPhotos[0] || null;
     h.date = now;
     h.inspector = inspector;
     rec.history[currentMonth] = h;
@@ -1022,7 +1099,7 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
     rec.history[currentMonth] = {
       result: currentResult, items,
       note: document.getElementById('fldNote').value.trim(),
-      photo: currentPhoto, date: now,
+      photos: currentPhotos, photo: currentPhotos[0] || null, date: now,
       inspector
     };
     savedOnline = await saveRecord('ext', currentNum, rec);
@@ -1253,14 +1330,14 @@ function allRows(includePhoto){
             'เดือน/ปีที่ผลิตถัง':h.tank?.year||'', ชนิดถัง:h.tank?.type||'',
             ผลรวม:h.result||'', ผู้ตรวจ:h.inspector||'',
             วันที่บันทึก:h.date||'', หมายเหตุ:h.note||'' };
-          if(includePhoto) row.__photo = h.photo || null;
+          if(includePhoto){ row.__photos = getHistoryPhotos(h); row.__photo = row.__photos[0] || null; }
           out.push(row);
         } else {
           const row = { ประเภท:'ถังดับเพลิง', เลขที่:n, เดือน:m,
             'เดือน/ปีที่ผลิต':r.year||'', ชนิดถัง:r.type||'',
             ผลตรวจ:h.result||'', ผู้ตรวจ:h.inspector||'',
             วันที่บันทึก:h.date||'', หมายเหตุ:h.note||'' };
-          if(includePhoto) row.__photo = h.photo || null;
+          if(includePhoto){ row.__photos = getHistoryPhotos(h); row.__photo = row.__photos[0] || null; }
           out.push(row);
         }
       }
@@ -1279,21 +1356,21 @@ function buildDataToolsUI(){
     <button class="editbtn" id="viewAllData">📋 ดูข้อมูลทั้งหมด (พร้อมรูป)</button>
     <button class="editbtn" id="exportExcelAll">⬇ Export Excel ทั้งหมด (พร้อมรูป)</button>
     <button class="editbtn" id="exportExcelMonth">⬇ Export Excel เดือนนี้ (พร้อมรูป)</button>
-    <button class="editbtn" id="printReport">📄 พิมพ์รายงานเดือนนี้ (PDF)</button>
+    <button class="editbtn" id="printReport">📄 ดาวน์โหลด PDF เดือนนี้</button>
     <button class="editbtn" id="monthlySummary">📊 สรุปผลรายเดือน (ดูด่วน)</button>`;
   bar.insertAdjacentElement('afterend', wrap);
 
   document.getElementById('viewAllData').onclick = ()=>{
     const rs = allRows(true);
     const w = window.open('', '_blank');
-    const cols = Object.keys(rs[0] || {ข้อมูล:'ไม่มีข้อมูล'}).filter(c=>c!=='__photo');
+    const cols = Object.keys(rs[0] || {ข้อมูล:'ไม่มีข้อมูล'}).filter(c=>c!=='__photo' && c!=='__photos');
     w.document.write(`<meta charset="utf-8"><title>ข้อมูลตรวจเช็คทั้งหมด</title>
       <style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}
       th,td{border:1px solid #bbb;padding:7px;text-align:left;font-size:12px;vertical-align:top}
       th{background:#eee} img{width:50px;height:50px;object-fit:cover;border-radius:4px}</style>
       <h2>ข้อมูลตรวจเช็คทั้งหมด</h2><p>จำนวน ${rs.length} รายการ</p>
       <table><tr><th>รูปป้ายตรวจสอบ</th>${cols.map(c=>'<th>'+escHtml(c)+'</th>').join('')}</tr>
-      ${rs.map(r=>'<tr><td>'+(r.__photo?`<img src="${r.__photo}">`:'-')+'</td>'+cols.map(c=>'<td>'+escHtml(r[c])+'</td>').join('')+'</tr>').join('')}
+      ${rs.map(r=>'<tr><td>'+((r.__photos||[]).map(x=>`<a href="${x}" target="_blank"><img src="${x}"></a>`).join('')||'-')+'</td>'+cols.map(c=>'<td>'+escHtml(r[c])+'</td>').join('')+'</tr>').join('')}
       </table>`);
   };
 
@@ -1302,7 +1379,7 @@ function buildDataToolsUI(){
     toast('กำลังสร้างไฟล์ Excel...');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('รายงาน');
-    const cols = Object.keys(rows[0] || {ข้อมูล:''}).filter(c=>c!=='__photo');
+    const cols = Object.keys(rows[0] || {ข้อมูล:''}).filter(c=>c!=='__photo' && c!=='__photos');
     ws.columns = [{header:'รูปป้ายตรวจสอบ', width:14}, ...cols.map(c=>({header:c, width:16}))];
     ws.getRow(1).font = {bold:true};
     for(let i=0;i<rows.length;i++){
@@ -1310,12 +1387,17 @@ function buildDataToolsUI(){
       const rowIdx = i+2;
       ws.addRow(['', ...cols.map(c=>r[c] ?? '')]);
       ws.getRow(rowIdx).height = 60;
-      if(r.__photo){
-        try{
-          const base64 = r.__photo.split(',')[1];
-          const imgId = wb.addImage({base64, extension:'jpeg'});
-          ws.addImage(imgId, { tl:{col:0, row:rowIdx-1}, ext:{width:60, height:60} });
-        }catch(e){ /* skip broken image */ }
+      const photos=r.__photos|| (r.__photo?[r.__photo]:[]);
+      if(photos.length){
+        ws.getColumn(1).width=Math.max(14, Math.min(45, photos.length*12));
+        for(let pi=0;pi<Math.min(photos.length,4);pi++){
+          try{
+            const src=photos[pi]; let imgId;
+            if(src.startsWith('data:')) imgId=wb.addImage({base64:src.split(',')[1],extension:'jpeg'});
+            else { const ab=await fetch(src).then(x=>x.arrayBuffer()); imgId=wb.addImage({buffer:ab,extension:'jpeg'}); }
+            ws.addImage(imgId,{tl:{col:pi*0.85,row:rowIdx-1},ext:{width:58,height:58}});
+          }catch(e){ console.warn('skip image',e); }
+        }
       }
     }
     const buf = await wb.xlsx.writeBuffer();
@@ -1334,22 +1416,20 @@ function buildDataToolsUI(){
     exportXlsx(rs, 'รายงานตรวจอุปกรณ์ดับเพลิง_'+currentMonth+'.xlsx');
   };
 
-  document.getElementById('printReport').onclick = ()=>{
-    const m = currentMonth;
-    const rs = allRows().filter(r=>r['เดือน']===m);
-    const cols = Object.keys(rs[0] || {ข้อมูล:'ไม่มีข้อมูล'});
-    const w = window.open('', '_blank');
-    w.document.write(`<meta charset="utf-8"><title>รายงานตรวจเช็คอุปกรณ์ดับเพลิง ${m}</title>
-      <style>body{font-family:Arial,sans-serif;padding:24px}
-      h2{margin-bottom:4px} .sub{color:#666;margin-bottom:16px}
-      table{border-collapse:collapse;width:100%} th,td{border:1px solid #bbb;padding:6px;font-size:12px;text-align:left}
-      th{background:#eee}</style>
-      <h2>รายงานตรวจเช็คอุปกรณ์ดับเพลิง คลัง ESC# 1-2</h2>
-      <div class="sub">ประจำเดือน ${m} · จำนวน ${rs.length} รายการ · พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</div>
-      <table><tr>${cols.map(c=>'<th>'+escHtml(c)+'</th>').join('')}</tr>
-      ${rs.map(r=>'<tr>'+cols.map(c=>'<td>'+escHtml(r[c])+'</td>').join('')+'</tr>').join('')}
-      </table>
-      <script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script>`);
+  document.getElementById('printReport').onclick = async ()=>{
+    const m=currentMonth; const rs=allRows(true).filter(r=>r['เดือน']===m);
+    if(!rs.length){toast('เดือนนี้ยังไม่มีข้อมูลสำหรับสร้าง PDF');return;}
+    if(typeof html2pdf==='undefined'){toast('โหลดระบบ PDF ไม่สำเร็จ กรุณาต่ออินเทอร์เน็ต');return;}
+    toast('กำลังสร้าง PDF พร้อมรูปภาพ...');
+    const cols=Object.keys(rs[0]).filter(c=>c!=='__photo'&&c!=='__photos');
+    const report=document.createElement('div'); report.className='pdf-report';
+    report.innerHTML=`<h1>รายงานตรวจเช็คอุปกรณ์ดับเพลิง คลัง ESC# 1-2</h1><div class="meta">ประจำเดือน ${m} · จำนวน ${rs.length} รายการ · สร้างเมื่อ ${new Date().toLocaleString('th-TH')}</div><table><thead><tr><th>รูปภาพ</th>${cols.map(c=>`<th>${escHtml(c)}</th>`).join('')}</tr></thead><tbody>${rs.map(r=>`<tr><td>${(r.__photos||[]).map(x=>`<img src="${x}" crossorigin="anonymous">`).join('')||'-'}</td>${cols.map(c=>`<td>${escHtml(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    document.body.appendChild(report);
+    try{
+      await html2pdf().set({margin:6,filename:`รายงานตรวจอุปกรณ์ดับเพลิง_${m}.pdf`,image:{type:'jpeg',quality:.92},html2canvas:{scale:1.5,useCORS:true,allowTaint:true},jsPDF:{unit:'mm',format:'a4',orientation:'landscape'},pagebreak:{mode:['css','legacy']}}).from(report).save();
+      toast('ดาวน์โหลด PDF เรียบร้อย');
+    }catch(e){console.error(e);toast('สร้าง PDF ไม่สำเร็จ');}
+    finally{report.remove();}
   };
 
   document.getElementById('monthlySummary').onclick = ()=>{
@@ -1368,6 +1448,24 @@ function buildDataToolsUI(){
   };
 }
 
+
+function renderDashboard(){
+  const m=currentMonth;
+  let total=0,checked=0,passed=0,failed=0; const defects=[]; const breakdown=[];
+  for(const layer of ['ext','cab']){
+    let lt=CONFIG[layer].numbers.length,lc=0,lp=0,lf=0;
+    for(const n of CONFIG[layer].numbers){
+      const h=dataCache[layer][n]?.history?.[m]; total++;
+      if(h?.result){checked++;lc++; if(h.result==='pass'){passed++;lp++;}else{failed++;lf++;defects.push({layer,n,h});}}
+    }
+    breakdown.push({label:CONFIG[layer].label,total:lt,checked:lc,pass:lp,fail:lf});
+  }
+  const due=total-checked;
+  document.getElementById('dashboardCards').innerHTML=`<div class="dash-card"><div class="l">อุปกรณ์ทั้งหมด</div><div class="n">${total}</div></div><div class="dash-card"><div class="l">ตรวจแล้ว</div><div class="n">${checked}</div></div><div class="dash-card pass"><div class="l">ผ่าน</div><div class="n">${passed}</div></div><div class="dash-card fail"><div class="l">พบปัญหา</div><div class="n">${failed}</div></div><div class="dash-card due"><div class="l">ยังไม่ตรวจ</div><div class="n">${due}</div></div>`;
+  document.getElementById('dashboardBreakdown').innerHTML=breakdown.map(x=>`<div class="dash-row"><div class="grow"><b>${x.label}</b><div style="color:#777">ทั้งหมด ${x.total} · ตรวจแล้ว ${x.checked}</div></div><div>ผ่าน <b style="color:var(--green)">${x.pass}</b> · ปัญหา <b style="color:var(--red)">${x.fail}</b></div></div>`).join('');
+  document.getElementById('dashboardDefects').innerHTML=defects.length?defects.map(x=>`<div class="dash-row" data-layer="${x.layer}" data-num="${x.n}"><div class="grow"><b>${CONFIG[x.layer].label} เลขที่ ${x.n}</b><div style="color:#777">${escHtml(x.h.note||'ไม่ได้ระบุหมายเหตุ')} · ${escHtml(x.h.inspector||'ไม่ระบุผู้ตรวจ')}</div></div><span class="dash-pill fail">พบปัญหา</span></div>`).join(''):'<div style="font-size:12.5px;color:#777">ไม่พบรายการมีปัญหาในเดือนนี้</div>';
+  document.querySelectorAll('#dashboardDefects [data-num]').forEach(el=>el.onclick=async()=>{const layer=el.dataset.layer;if(layer!==currentLayer){currentLayer=layer;document.querySelectorAll('.layer-btn').forEach(b=>b.classList.toggle('active',b.dataset.layer===layer));document.getElementById('planImg').src=IMAGES[layer];await ensureLayerLoaded(layer);await refreshAll();}openSheet(+el.dataset.num);});
+}
 /* ===================== Add / remove / drag toolbar ===================== */
 function setModeButtons(){
   document.getElementById('editToggle').classList.toggle('on', editMode);
@@ -1473,6 +1571,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     btn.classList.add('active');
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     document.getElementById('view-'+btn.dataset.view).classList.add('active');
+    if(btn.dataset.view==='dashboard') renderDashboard();
   });
 });
 document.querySelectorAll('.chip').forEach(chip=>{
