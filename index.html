@@ -157,7 +157,7 @@
   .photo-box{border:1.5px dashed var(--line);border-radius:10px;padding:12px;text-align:center;position:relative;}
   .photo-box img{max-width:100%;max-height:180px;border-radius:8px;display:block;margin:0 auto;}
   .photo-box .ph-empty{color:#999;font-size:12.5px;padding:14px 0;}
-  .photo-box label.upl{display:inline-block;margin-top:8px;background:var(--steel-dark);color:#fff;font-size:12.5px;font-weight:700;padding:8px 16px;border-radius:20px;cursor:pointer;}
+  .photo-box .upl{display:inline-block;margin-top:8px;background:var(--steel-dark);color:#fff;font-size:12.5px;font-weight:700;padding:8px 16px;border-radius:20px;cursor:pointer;}
   .photo-box input[type=file]{display:none;}
 
   .save-btn{width:100%;padding:14px;background:var(--red);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;margin-top:6px;font-family:inherit;}
@@ -171,6 +171,20 @@
   .hist-item .hd{flex:1;}
   .hist-item .hres{font-weight:700;}
   .hist-item .hres.pass{color:var(--green);} .hist-item .hres.fail{color:var(--red);}
+  .hist-item:hover{background:#faf9f6;}
+  .hist-item:focus{outline:2px solid var(--blue);outline-offset:2px;}
+  .qr-lock-box{margin:0 0 14px;padding:12px;border:1px solid #e6c46a;border-radius:10px;background:#fff8df;color:#71510b;font-size:12.5px;line-height:1.5;}
+  .qr-lock-box strong{display:block;font-size:13.5px;margin-bottom:4px;}
+  .qr-lock-box .mini-btn{margin-top:8px;background:var(--steel-dark);color:#fff;border-color:var(--steel-dark);}
+  .camera-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;}
+  #cameraVideo{width:100%;max-height:60vh;object-fit:cover;border-radius:10px;background:#000;}
+  .history-detail-card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 13px;margin-bottom:10px;}
+  .history-detail-card-title{font-size:13.5px;font-weight:800;color:var(--steel-dark);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .history-detail-grid{display:grid;grid-template-columns:130px 1fr;gap:8px 10px;font-size:13px;}
+  .history-detail-grid .k{font-weight:700;color:#666;}
+  .history-detail-photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px;}
+  .history-detail-photos img{width:100%;max-height:260px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer;}
+  @media(max-width:430px){.history-detail-grid{grid-template-columns:110px 1fr;}}
 
   ::-webkit-scrollbar{width:6px;height:6px;} ::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px;}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--steel-dark);color:#fff;
@@ -278,6 +292,11 @@
       <button class="close" id="closeSheet">✕</button>
     </div>
     <div class="sheet-body">
+      <div id="qrLockBox" class="qr-lock-box">
+        <strong>🔒 โหมดดูข้อมูล — ยังไม่สามารถกรอกผลตรวจได้</strong>
+        ต้องสแกน QR Code ที่ติดอยู่กับอุปกรณ์จริงก่อน จึงจะปลดล็อกแบบฟอร์มและบันทึกผลตรวจได้
+        <div><button type="button" class="mini-btn" id="scanFromSheetBtn">📷 สแกน QR เพื่อเริ่มตรวจ</button></div>
+      </div>
       <div class="field-row" id="extOnlyFields">
         <div class="field">
           <label>เดือน/ปีที่ผลิต</label>
@@ -333,15 +352,14 @@
       </div>
 
       <div class="field">
-        <label>แนบรูปภาพ (เลือกได้หลายรูป)</label>
+        <label>รูปภาพหน้างาน (ต้องถ่ายจากกล้องเท่านั้น)</label>
         <div class="photo-box" id="photoBox">
           <div class="ph-empty" id="phEmpty">ยังไม่มีรูปป้ายตรวจสอบ</div>
           <img id="phImg" style="display:none">
           <div id="photoGallery" class="photo-gallery"></div>
           <br>
-          <label class="upl">📷 ถ่าย/เลือกรูปหลายรูป
-            <input type="file" id="fldPhoto" accept="image/*" multiple>
-          </label>
+          <button type="button" class="upl" id="openCameraBtn" style="border:none;">📷 เปิดกล้องถ่ายรูป</button>
+          <div style="font-size:11px;color:#888;margin-top:7px;">ไม่สามารถเลือกภาพจากอัลบั้มหรือคลังรูปได้ และต้องถ่ายรูปใหม่อย่างน้อย 1 รูปก่อนบันทึก</div>
         </div>
       </div>
 
@@ -377,6 +395,36 @@
       <canvas id="scanCanvas" style="display:none;"></canvas>
       <div style="font-size:12px;color:#888;margin-top:8px;text-align:center;">เล็งกล้องไปที่ QR Code บนอุปกรณ์เพื่อเปิดหน้าตรวจเช็คโดยตรง</div>
     </div>
+  </div>
+</div>
+
+<div class="overlay" id="cameraOverlay" style="z-index:75;">
+  <div class="sheet" style="max-width:520px;">
+    <div class="sheet-head">
+      <div class="badge">📷</div>
+      <h2>ถ่ายรูปอุปกรณ์หน้างาน</h2>
+      <button class="close" id="closeCamera">✕</button>
+    </div>
+    <div class="sheet-body">
+      <video id="cameraVideo" playsinline muted autoplay></video>
+      <canvas id="cameraCanvas" style="display:none;"></canvas>
+      <div style="font-size:12px;color:#777;margin-top:8px;text-align:center;">ถ่ายภาพจากกล้องโดยตรงเท่านั้น</div>
+      <div class="camera-actions">
+        <button type="button" class="save-btn" id="capturePhotoBtn" style="width:auto;margin:0;padding:11px 22px;">📸 ถ่ายภาพ</button>
+        <button type="button" class="mini-btn" id="cancelCameraBtn">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="historyDetailOverlay" style="z-index:90;align-items:center;">
+  <div class="sheet" style="max-width:560px;border-radius:16px;max-height:90vh;">
+    <div class="sheet-head">
+      <div class="badge">🕘</div>
+      <h2 id="historyDetailTitle">รายละเอียดประวัติการตรวจ</h2>
+      <button class="close" id="closeHistoryDetail">✕</button>
+    </div>
+    <div class="sheet-body" id="historyDetailBody"></div>
   </div>
 </div>
 
@@ -576,6 +624,10 @@ let removeMode = false; // tap-to-remove
 let zoom = 1;
 let scanStream = null;
 let scanRAF = null;
+let cameraStream = null;
+let qrVerifiedKey = null;
+let capturedPhotoThisSession = false;
+let freshCapturedPhotos = new Set();
 
 const monthSelect = document.getElementById('monthSelect');
 monthSelect.value = currentMonth;
@@ -665,7 +717,7 @@ function monthResult(layer, rec, month){
 /* ===================== Rendering ===================== */
 function renderHeader(){
   if(currentLayer==='cab'){
-    document.getElementById('hTitle').textContent = 'ตรวจตู้น้ำดับเพลิง + ถังในตู้';
+    document.getElementById('hTitle').textContent = 'ตรวจถังดับเพลิงและตู้น้ำดับเพลิง';
     document.getElementById('hSub').textContent = cfg().numbers.length + ' ตู้ · ตรวจสภาพตู้และถังดับเพลิงในตู้แยกกัน';
     document.getElementById('sheetTypeLabel').textContent = 'ตู้น้ำดับเพลิง';
   } else {
@@ -873,7 +925,7 @@ function updatePhotoPreview(){
     const d=document.createElement('div'); d.className='photo-thumb';
     d.innerHTML=`<img src="${src}" title="คลิกเพื่อดูรูปเต็ม"><button type="button" title="ลบรูป">×</button>`;
     d.querySelector('img').onclick=()=>window.open(src,'_blank');
-    d.querySelector('button').onclick=()=>{currentPhotos.splice(i,1);updatePhotoPreview();};
+    d.querySelector('button').onclick=()=>{ const removed=currentPhotos[i]; currentPhotos.splice(i,1); freshCapturedPhotos.delete(removed); capturedPhotoThisSession=freshCapturedPhotos.size>0; updatePhotoPreview(); };
     gallery.appendChild(d);
   });
 }
@@ -894,28 +946,152 @@ function renderHistorySimple(rec){
       </div>
       <div class="hres ${h.result==='pass'?'pass':'fail'}">${h.result==='pass' ? 'ผ่าน' : 'พบปัญหา'}</div>
     `;
-    div.onclick=()=>showHistoryDetail(m,h);
+    div.tabIndex = 0;
+    div.onclick=()=>showHistoryDetail(m,h,{layer:'ext',rec,num:currentNum});
+    div.onkeydown=(e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); showHistoryDetail(m,h,{layer:'ext',rec,num:currentNum}); } };
     list.appendChild(div);
   });
 }
-function showHistoryDetail(month,h){
-  const photos=getHistoryPhotos(h);
-  const win=window.open('','_blank');
-  const details=h.cabinet ? `ตู้น้ำ: ${h.cabinet.result==='pass'?'ผ่าน':'พบปัญหา'} | ถังในตู้: ${h.tank?.result==='pass'?'ผ่าน':'พบปัญหา'}` : `ผลตรวจ: ${h.result==='pass'?'ผ่าน':'พบปัญหา'}`;
-  win.document.write(`<meta charset="utf-8"><title>ประวัติ ${month}</title><style>body{font-family:Tahoma,sans-serif;padding:20px;max-width:900px;margin:auto}img{max-width:100%;max-height:650px;display:block;margin:12px auto;border-radius:8px}.card{border:1px solid #ddd;border-radius:10px;padding:15px}</style><h2>ประวัติการตรวจ ${month}</h2><div class="card"><p>${details}</p><p>ผู้ตรวจ: ${escHtml(h.inspector||'-')}</p><p>หมายเหตุ: ${escHtml(h.note||'-')}</p><p>วันที่บันทึก: ${h.date?new Date(h.date).toLocaleString('th-TH'):'-'}</p></div>${photos.map((x,i)=>`<h3>รูปที่ ${i+1}</h3><img src="${x}">`).join('')||'<p>ไม่มีรูปภาพ</p>'}`);
+function historyChecklistText(layer, data){
+  if(!data) return '-';
+  if(layer==='cabinet'){
+    const checks = Array.isArray(data.checks) ? data.checks : [];
+    return checks.length ? checks.map(i=>CONFIG.cab.checklist[i]?.[1]).filter(Boolean).join(' • ') : '-';
+  }
+  if(layer==='tank'){
+    const checks = Array.isArray(data.checks) ? data.checks : [];
+    return checks.length ? checks.map(i=>CONFIG.ext.checklist[i]?.[1]).filter(Boolean).join(' • ') : '-';
+  }
+  if(layer==='ext'){
+    const items = data.items || {};
+    const labels = CONFIG.ext.checklist.filter(([k])=>!!items[k]).map(([,label])=>label);
+    return labels.length ? labels.join(' • ') : '-';
+  }
+  return '-';
 }
+function historyResultHtml(result){
+  if(result==='pass') return '<b style="color:var(--green)">ผ่าน / ปกติ</b>';
+  if(result==='fail') return '<b style="color:var(--red)">พบปัญหา</b>';
+  return '-';
+}
+function historyDetailCard(title, rows){
+  const html = rows.map(([k,v])=>`<div class="k">${k}</div><div>${v}</div>`).join('');
+  return `<div class="history-detail-card"><div class="history-detail-card-title">${title}</div><div class="history-detail-grid">${html}</div></div>`;
+}
+function showHistoryDetail(month,h,context={}){
+  const photos=getHistoryPhotos(h);
+  const layer=context.layer || (h.cabinet ? 'cab' : 'ext');
+  const rec=context.rec || {};
+  const num=context.num ?? currentNum;
+  const equipmentLabel=layer==='cab' ? 'ตู้น้ำดับเพลิง' : 'ถังดับเพลิง';
+  const title=document.getElementById('historyDetailTitle');
+  const body=document.getElementById('historyDetailBody');
+  title.textContent=`รายละเอียดประวัติ ${equipmentLabel} เลขที่ ${num} · ${month}`;
+
+  let cards='';
+  cards += historyDetailCard('ข้อมูลการตรวจ', [
+    ['อุปกรณ์', escHtml(equipmentLabel)],
+    ['เลขที่', escHtml(num)],
+    ['เดือนที่ตรวจ', escHtml(month)],
+    ['ผลตรวจ', historyResultHtml(h.result)],
+    ['ผู้ตรวจ', escHtml(h.inspector||'-')],
+    ['วันที่บันทึก', h.date ? new Date(h.date).toLocaleString('th-TH') : '-'],
+    ['หมายเหตุ', escHtml(h.note||'-')]
+  ]);
+
+  if(layer==='cab'){
+    cards += historyDetailCard('รายละเอียดตู้น้ำดับเพลิง', [
+      ['ผลตรวจ', historyResultHtml(h.cabinet?.result)],
+      ['รายการตรวจสอบ', escHtml(historyChecklistText('cabinet',h.cabinet))]
+    ]);
+    cards += historyDetailCard('รายละเอียดถังดับเพลิงในตู้', [
+      ['ผลตรวจ', historyResultHtml(h.tank?.result)],
+      ['เดือน/ปีที่ผลิต', escHtml(h.tank?.year||'-')],
+      ['ชนิดถัง', escHtml(h.tank?.type||'-')],
+      ['รายการตรวจสอบ', escHtml(historyChecklistText('tank',h.tank))]
+    ]);
+  }else{
+    cards += historyDetailCard('รายละเอียดถังดับเพลิง', [
+      ['เดือน/ปีที่ผลิต', escHtml(rec.year||'-')],
+      ['ชนิดถัง', escHtml(rec.type||'-')],
+      ['รายการตรวจสอบ', escHtml(historyChecklistText('ext',h))]
+    ]);
+  }
+
+  body.innerHTML=`${cards}
+    <div class="history-detail-card">
+      <div class="history-detail-card-title">รูปภาพ (${photos.length})</div>
+      <div class="history-detail-photos">${photos.map((x,i)=>`<img src="${x}" alt="รูปประวัติ ${i+1}">`).join('') || '<div style="font-size:12.5px;color:#888;">ไม่มีรูปภาพ</div>'}</div>
+    </div>`;
+  body.querySelectorAll('.history-detail-photos img').forEach(img=>{ img.onclick=()=>window.open(img.src,'_blank'); });
+  document.getElementById('historyDetailOverlay').classList.add('show');
+}
+document.getElementById('closeHistoryDetail').addEventListener('click', ()=>document.getElementById('historyDetailOverlay').classList.remove('show'));
+document.getElementById('historyDetailOverlay').addEventListener('click', e=>{ if(e.target.id==='historyDetailOverlay') e.currentTarget.classList.remove('show'); });
 
 document.getElementById('btnPass').addEventListener('click', ()=>{ currentResult='pass'; updateResultButtons(); });
 document.getElementById('btnFail').addEventListener('click', ()=>{ currentResult='fail'; updateResultButtons(); });
 
-document.getElementById('fldPhoto').addEventListener('change', async (e)=>{
-  const files=[...e.target.files]; if(!files.length) return;
-  try{
-    toast('กำลังเตรียมรูปภาพ...');
-    for(const file of files){ currentPhotos.push(await resizeImage(file, 1200, 0.72)); }
-    updatePhotoPreview(); e.target.value=''; toast(`เพิ่มรูปแล้ว ${files.length} รูป`);
-  }catch(err){ console.error(err); toast('อ่านรูปภาพไม่สำเร็จ'); }
+function inspectionKey(layer,num){ return `${layer}:${num}`; }
+function isQrVerifiedForCurrent(){ return qrVerifiedKey===inspectionKey(currentLayer,currentNum); }
+function setInspectionEditMode(enabled){
+  const lockBox=document.getElementById('qrLockBox');
+  lockBox.style.display=enabled?'none':'block';
+  document.querySelectorAll('#overlay .sheet-body input, #overlay .sheet-body select, #overlay .sheet-body textarea, #overlay .sheet-body button').forEach(el=>{
+    if(el.id==='scanFromSheetBtn') return;
+    el.disabled=!enabled;
+  });
+  document.getElementById('historyList').style.pointerEvents='auto';
+  document.getElementById('historyList').style.opacity='1';
+}
+
+document.getElementById('scanFromSheetBtn').addEventListener('click', ()=>{
+  document.getElementById('overlay').classList.remove('show');
+  startScanner();
 });
+
+async function startPhotoCamera(){
+  if(!isQrVerifiedForCurrent()){ toast('กรุณาสแกน QR ของอุปกรณ์ก่อนถ่ายรูป'); return; }
+  if(!navigator.mediaDevices?.getUserMedia){ toast('เบราว์เซอร์นี้ไม่รองรับกล้อง กรุณาใช้ Chrome/Safari เวอร์ชันล่าสุด'); return; }
+  document.getElementById('cameraOverlay').classList.add('show');
+  try{
+    cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    const video=document.getElementById('cameraVideo');
+    video.srcObject=cameraStream;
+    await video.play();
+  }catch(err){
+    console.error(err); toast('เปิดกล้องไม่ได้ กรุณาอนุญาตสิทธิ์กล้อง'); stopPhotoCamera();
+  }
+}
+function stopPhotoCamera(){
+  if(cameraStream){ cameraStream.getTracks().forEach(t=>t.stop()); cameraStream=null; }
+  const video=document.getElementById('cameraVideo');
+  if(video) video.srcObject=null;
+  document.getElementById('cameraOverlay').classList.remove('show');
+}
+function capturePhotoFromCamera(){
+  const video=document.getElementById('cameraVideo');
+  if(!cameraStream || !video.videoWidth){ toast('กล้องยังไม่พร้อม กรุณาลองอีกครั้ง'); return; }
+  const maxW=1200;
+  const scale=Math.min(1,maxW/video.videoWidth);
+  const canvas=document.getElementById('cameraCanvas');
+  canvas.width=Math.max(1,Math.round(video.videoWidth*scale));
+  canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
+  canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
+  const capturedData=canvas.toDataURL('image/jpeg',0.78);
+  currentPhotos.push(capturedData);
+  freshCapturedPhotos.add(capturedData);
+  currentPhoto=currentPhotos[0]||null;
+  capturedPhotoThisSession=freshCapturedPhotos.size>0;
+  updatePhotoPreview();
+  stopPhotoCamera();
+  toast('ถ่ายรูปเรียบร้อย — สามารถเปิดกล้องถ่ายเพิ่มได้');
+}
+document.getElementById('openCameraBtn').addEventListener('click', startPhotoCamera);
+document.getElementById('capturePhotoBtn').addEventListener('click', capturePhotoFromCamera);
+document.getElementById('closeCamera').addEventListener('click', stopPhotoCamera);
+document.getElementById('cancelCameraBtn').addEventListener('click', stopPhotoCamera);
+document.getElementById('cameraOverlay').addEventListener('click', e=>{ if(e.target.id==='cameraOverlay') stopPhotoCamera(); });
 
 /* ===================== Sheet (dual-form: cab) ===================== */
 function removeCabSplitBlocks(){
@@ -993,18 +1169,24 @@ function renderHistoryCab(rec){
     div.innerHTML = `
       ${getHistoryPhotos(h)[0] ? `<img src="${getHistoryPhotos(h)[0]}">` : '<div style="width:36px;height:36px;border-radius:6px;background:#eee;"></div>'}
       <div class="hd">
-        <div>${m}${h.inspector ? ' · '+h.inspector : ''} (ตู้: ${h.cabinet?.result==='pass'?'ผ่าน':'พบปัญหา'} / ถัง: ${h.tank?.result==='pass'?'ผ่าน':'พบปัญหา'})</div>
+        <div>${m}${h.inspector ? ' · '+h.inspector : ''}</div>
         <div style="color:#999;">${h.date ? new Date(h.date).toLocaleString('th-TH') : ''}</div><div class="hist-photo-count">รูป ${getHistoryPhotos(h).length} รูป · คลิกดูรายละเอียด</div>
       </div>
       <div class="hres ${h.result==='pass'?'pass':'fail'}">${h.result==='pass' ? 'ผ่าน' : 'พบปัญหา'}</div>
     `;
+    div.tabIndex = 0;
+    div.onclick=()=>showHistoryDetail(m,h,{layer:'cab',rec,num:currentNum});
+    div.onkeydown=(e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); showHistoryDetail(m,h,{layer:'cab',rec,num:currentNum}); } };
     list.appendChild(div);
   });
 }
 
 /* ===================== Shared sheet open/save ===================== */
-async function openSheet(num){
+async function openSheet(num, options={}){
   currentNum = num;
+  qrVerifiedKey = options.qrVerified ? inspectionKey(currentLayer,num) : null;
+  capturedPhotoThisSession = false;
+  freshCapturedPhotos.clear();
   const overlay = document.getElementById('overlay');
   const saveMsg = document.getElementById('saveMsg');
 
@@ -1031,38 +1213,35 @@ async function openSheet(num){
       const qrData = 'FIREAPP:'+currentLayer+':'+num;
       document.getElementById('qrPointImg').src = qrImgUrl(qrData);
       const nfcBtn = document.getElementById('writeNfcBtn');
-      if('NDEFReader' in window){
-        nfcBtn.style.display = 'inline-block';
-        nfcBtn.onclick = async ()=>{
-          try{
-            const writer = new NDEFReader();
-            await writer.write({records:[{recordType:'text', data: qrData}]});
-            toast('เขียนข้อมูลลง NFC Tag เรียบร้อย — นำไปติดที่อุปกรณ์ได้เลย');
-          }catch(e){ toast('เขียน NFC ไม่สำเร็จ: แตะโทรศัพท์ให้ชิด NFC Tag แล้วลองใหม่'); }
-        };
-      } else {
-        nfcBtn.style.display = 'none';
-      }
+      nfcBtn.style.display = 'none'; // ใช้ QR Code เท่านั้นตามนโยบายการตรวจ
     }catch(qrError){
       console.warn('QR setup error:', qrError);
     }
 
-    saveMsg.textContent = '';
+    setInspectionEditMode(isQrVerifiedForCurrent());
+    saveMsg.textContent = isQrVerifiedForCurrent() ? 'QR ถูกต้อง — พร้อมกรอกและบันทึกผลตรวจ' : 'โหมดดูข้อมูล: สแกน QR ที่อุปกรณ์จริงเพื่อกรอกผลตรวจ';
   }catch(error){
     console.error('openSheet error:', error);
-    saveMsg.textContent = 'โหลดข้อมูลบางส่วนไม่สำเร็จ แต่ยังสามารถกรอกและบันทึกใหม่ได้';
-    toast('เปิดหน้าตรวจแล้ว แต่โหลดข้อมูลเดิมบางส่วนไม่สำเร็จ');
+    setInspectionEditMode(isQrVerifiedForCurrent());
+    saveMsg.textContent = isQrVerifiedForCurrent() ? 'โหลดข้อมูลเดิมบางส่วนไม่สำเร็จ — ตรวจสอบข้อมูลก่อนบันทึก' : 'โหมดดูข้อมูล: สแกน QR ที่อุปกรณ์จริงเพื่อกรอกผลตรวจ';
+    toast('เปิดหน้าข้อมูลแล้ว แต่โหลดข้อมูลเดิมบางส่วนไม่สำเร็จ');
   }
 }
 
 document.getElementById('closeSheet').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.remove('show');
+  qrVerifiedKey = null;
+  capturedPhotoThisSession = false;
+  freshCapturedPhotos.clear();
+  stopPhotoCamera();
 });
 document.getElementById('overlay').addEventListener('click', (e)=>{
   if(e.target.id==='overlay') document.getElementById('overlay').classList.remove('show');
 });
 
 document.getElementById('saveBtn').addEventListener('click', async ()=>{
+  if(!isQrVerifiedForCurrent()){ toast('ไม่สามารถบันทึกได้ — กรุณาสแกน QR Code ที่อุปกรณ์จริงก่อน'); return; }
+  if(!capturedPhotoThisSession){ toast('กรุณาถ่ายรูปอุปกรณ์จากกล้องอย่างน้อย 1 รูปก่อนบันทึก'); return; }
   const inspector = document.getElementById('fldInspector').value.trim();
   localStorage.setItem(LOCAL_PREFIX+'lastInspector', inspector);
   const now = new Date().toISOString();
@@ -1125,6 +1304,8 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
   }
 
   await refreshAll();
+  capturedPhotoThisSession = false;
+  freshCapturedPhotos.clear();
 
   if(overallFail){
     showDefectAlert();
@@ -1151,7 +1332,7 @@ document.getElementById('deleteRecordBtn').addEventListener('click', async ()=>{
   await refreshAll();
 
   // Rebuild the sheet form from scratch so it reflects the now-empty month
-  await openSheet(currentNum);
+  await openSheet(currentNum, {qrVerified:true});
   document.getElementById('saveMsg').textContent = 'ลบข้อมูลของเดือนนี้แล้ว';
   toast('ลบข้อมูลการตรวจเรียบร้อย');
 });
@@ -1244,7 +1425,7 @@ document.getElementById('scanNfcBtn').addEventListener('click', async ()=>{
       const record = event.message.records[0];
       const textDecoder = new TextDecoder(record.encoding || 'utf-8');
       const data = textDecoder.decode(record.data);
-      handleScanResult(data);
+      handleScanResult(data, 'nfc');
     };
   }catch(e){ toast('เปิดการอ่าน NFC ไม่สำเร็จ กรุณาอนุญาตสิทธิ์ NFC'); }
 });
@@ -1290,7 +1471,7 @@ async function startScanner(){
         if(barcodeDetector){
           const codes = await barcodeDetector.detect(video);
           if(codes && codes.length && codes[0].rawValue){
-            handleScanResult(codes[0].rawValue);
+            handleScanResult(codes[0].rawValue, 'qr');
             return;
           }
         } else if(typeof jsQR !== 'undefined'){
@@ -1299,7 +1480,7 @@ async function startScanner(){
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const code = jsQR(imageData.data, imageData.width, imageData.height);
           if(code && code.data){
-            handleScanResult(code.data);
+            handleScanResult(code.data, 'qr');
             return;
           }
         }
@@ -1315,8 +1496,9 @@ function stopScanner(){
   if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream = null; }
   document.getElementById('scanOverlay').classList.remove('show');
 }
-async function handleScanResult(data){
+async function handleScanResult(data, source='qr'){
   stopScanner();
+  if(source!=='qr'){ toast('ระบบนี้อนุญาตให้ปลดล็อกการกรอกข้อมูลด้วย QR Code เท่านั้น'); return; }
   const m = /^FIREAPP:(ext|cab):(\d+)$/.exec(data.trim());
   if(!m){ toast('QR นี้ไม่ใช่ของระบบตรวจเช็คอุปกรณ์ดับเพลิง'); return; }
   const [, layer, numStr] = m;
@@ -1329,8 +1511,8 @@ async function handleScanResult(data){
     await ensureLayerLoaded(layer);
     await refreshAll();
   }
-  toast('พบ QR แล้ว — เปิดแบบฟอร์มกรอกข้อมูล');
-  openSheet(num);
+  toast('สแกน QR สำเร็จ — ปลดล็อกแบบฟอร์มแล้ว');
+  await openSheet(num, {qrVerified:true});
 }
 
 /* ===================== Export / report ===================== */
@@ -1626,7 +1808,7 @@ monthSelect.addEventListener('change', ()=>{
 /* ===================== Init ===================== */
 (async function init(){
   document.getElementById('planImg').src = IMAGES.ext;
-  if('NDEFReader' in window){ document.getElementById('scanNfcBtn').style.display = 'inline-block'; }
+  document.getElementById('scanNfcBtn').style.display = 'none'; // QR เท่านั้นสำหรับการปลดล็อกแบบฟอร์ม
   buildDataToolsUI();
   await checkSupabaseConnection();
   await loadPointList('ext'); await loadPointList('cab');
