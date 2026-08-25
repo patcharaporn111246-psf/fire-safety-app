@@ -1,4 +1,4 @@
-const CACHE_NAME = "fire-safety-v3";
+const CACHE_NAME = "fire-safety-v4";
 
 const APP_SHELL = [
   "./",
@@ -35,13 +35,11 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const request = event.request;
 
-  if (request.method !== "GET") {
-    return;
-  }
+  if (request.method !== "GET") return;
 
   const url = new URL(request.url);
 
-  // หน้าเว็บหลักให้โหลดข้อมูลล่าสุดจากอินเทอร์เน็ตก่อน
+  // HTML / Navigation = Network First
   if (
     request.mode === "navigate" ||
     url.pathname.endsWith("/") ||
@@ -50,32 +48,42 @@ self.addEventListener("fetch", event => {
     event.respondWith(
       fetch(request, { cache: "no-store" })
         .then(response => {
-          if (response.ok) {
+          if (response && response.ok) {
+            const copy = response.clone();
+
             caches.open(CACHE_NAME).then(cache => {
-              cache.put("./index.html", response.clone());
+              cache.put("./index.html", copy);
             });
           }
 
           return response;
         })
-        .catch(() =>
-          caches.match("./index.html")
-            .then(response => response || caches.match("./"))
-        )
+        .catch(async () => {
+          return (
+            await caches.match("./index.html")
+          ) || (
+            await caches.match("./")
+          );
+        })
     );
 
     return;
   }
 
-  // ไฟล์อื่นใช้จาก Cache ก่อน แล้วอัปเดตเบื้องหลัง
+  // ไฟล์อื่น = Stale While Revalidate
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(request).then(cachedResponse => {
-        const freshResponse = fetch(request)
+
+        const networkRequest = fetch(request, {
+          cache: "no-store"
+        })
           .then(response => {
-            if (response.ok) {
+            if (response && response.ok) {
+              const copy = response.clone();
+
               caches.open(CACHE_NAME).then(cache => {
-                cache.put(request, response.clone());
+                cache.put(request, copy);
               });
             }
 
@@ -83,7 +91,7 @@ self.addEventListener("fetch", event => {
           })
           .catch(() => cachedResponse);
 
-        return cachedResponse || freshResponse;
+        return cachedResponse || networkRequest;
       })
     );
   }
