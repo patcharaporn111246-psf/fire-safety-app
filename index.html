@@ -344,7 +344,7 @@
         </div>
       </div>
 
-      <div class="field" id="qrPointBox" style="text-align:center;">
+      <div class="field" id="qrPointBox" style="text-align:center;display:none;">
         <label>QR Code ประจำจุดนี้ (ติดที่ตัวอุปกรณ์จริง)</label>
         <img id="qrPointImg" style="width:120px;height:120px;">
         <div><button type="button" class="mini-btn" id="downloadQrBtn">⬇ ดาวน์โหลด QR นี้</button>
@@ -1398,7 +1398,16 @@ document.getElementById('downloadQrBtn').addEventListener('click', async ()=>{
   }
 });
 
+// ล็อคการพิมพ์ป้าย QR เพื่อป้องกันการนำ QR ไปตรวจแทนอุปกรณ์จริง
+const QR_PRINT_PIN = '2580'; // เปลี่ยนรหัสนี้ได้ตามต้องการ
+
 document.getElementById('printLabelsBtn').addEventListener('click', ()=>{
+  const pin = prompt('🔒 กรุณาใส่รหัสเพื่อพิมพ์ป้าย QR');
+  if(pin !== QR_PRINT_PIN){
+    toast('ไม่อนุญาตให้พิมพ์ป้าย QR');
+    return;
+  }
+
   const nums = CONFIG[currentLayer].numbers;
   const cells = nums.map(n=>`
     <div style="display:inline-block;text-align:center;width:150px;margin:6px;padding:8px;border:1px dashed #999;">
