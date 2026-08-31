@@ -71,7 +71,7 @@
   .map-toolbar .legend{display:flex;gap:10px;font-size:11px;color:#555;margin-left:auto;flex-wrap:wrap;}
   .legend span{display:inline-flex;align-items:center;gap:4px;}
   .dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
-  .dot.ok{background:var(--green);} .dot.due{background:var(--red);} .dot.none{background:#b7b2a5;}
+  .dot.ok{background:var(--green);} .dot.fail{background:var(--red);} .dot.none{background:#b7b2a5;}
   .zoombtn{width:30px;height:30px;border-radius:6px;border:1px solid var(--line);background:#fff;font-size:16px;cursor:pointer;color:var(--steel);flex-shrink:0;}
   .editbtn{border-radius:20px;border:1.5px solid var(--blue);background:#fff;color:var(--blue);font-size:11.5px;font-weight:700;padding:6px 12px;cursor:pointer;font-family:inherit;white-space:nowrap;}
   .editbtn.on{background:var(--blue);color:#fff;}
@@ -94,7 +94,8 @@
   }
   .marker:active{transform:translate(-50%,-50%) scale(.9);}
   .marker.ok{background:#2e8b57 !important;}
-  .marker.due{background:#c62828 !important;}
+  .marker.fail{background:#c62828 !important;}
+  .marker.none{background:#b7b2a5 !important;}
   .marker.editable{box-shadow:0 0 0 4px rgba(43,95,168,.25);cursor:grab;}
   .marker.dragging{cursor:grabbing;box-shadow:0 0 0 5px rgba(43,95,168,.45);z-index:30;transition:none;}
 
@@ -109,13 +110,14 @@
     width:34px;height:34px;border-radius:50%;flex-shrink:0;
     display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;background:#b7b2a5;
   }
-  .ext-num.ok{background:var(--green);} .ext-num.due{background:var(--red);}
+  .ext-num.ok{background:var(--green);} .ext-num.fail{background:var(--red);} .ext-num.none{background:#b7b2a5;}
   .ext-info{flex:1;min-width:0;}
   .ext-info .t1{font-size:13.5px;font-weight:700;}
   .ext-info .t2{font-size:11.5px;color:#7b7f86;margin-top:2px;}
   .ext-status{font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;white-space:nowrap;}
   .ext-status.ok{background:#e3f3ea;color:var(--green);}
-  .ext-status.due{background:#fbe7e4;color:var(--red-dark);}
+  .ext-status.fail{background:#fbe7e4;color:var(--red-dark);}
+  .ext-status.none{background:#efefec;color:#777;}
 
   .filterbar{display:flex;gap:6px;padding:10px 12px 0;flex-wrap:wrap;}
   .chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;color:#666;cursor:pointer;}
@@ -253,7 +255,8 @@
         <button class="editbtn" id="printLabelsBtn">🏷️ พิมพ์ป้าย QR</button>
         <div class="legend">
           <span><i class="dot ok"></i>ตรวจแล้ว</span>
-          <span><i class="dot due"></i>รอตรวจ</span>
+          <span><i class="dot fail"></i>พบปัญหา</span>
+          <span><i class="dot none"></i>ยังไม่ได้ตรวจ</span>
         </div>
         <div class="edit-hint" id="editHint">โหมดปรับตำแหน่ง: จุดทุกหมายเลขจะแสดงบน Layout แล้ว ให้ลากหมุดแต่ละจุดไปวางให้ตรงกับตำแหน่งจริง แล้วกดปุ่มนี้อีกครั้งเพื่อบันทึก (ตำแหน่งจะถูกบันทึกให้ทุกคนเห็นตรงกัน)</div>
       </div>
@@ -268,7 +271,7 @@
     <div class="view" id="view-list">
       <div class="filterbar">
         <div class="chip active" data-f="all">ทั้งหมด</div>
-        <div class="chip" data-f="due">รอตรวจ</div>
+        <div class="chip" data-f="due">ยังไม่ได้ตรวจ</div>
         <div class="chip" data-f="ok">ตรวจแล้ว</div>
         <div class="chip" data-f="fail">⚠ พบปัญหา</div>
       </div>
@@ -736,11 +739,11 @@ function renderMarkers(){
     const insp = hasInspectionForMonth(rec, currentMonth);
     const res = monthResult(layer, rec, currentMonth);
     // สีจุดสถานะ: ตรวจแล้ว/ผ่าน = เขียว, พบปัญหา = แดง, ยังไม่ตรวจ = สีเทา
-    const okClass = insp && res === 'pass' ? 'ok' : (insp && res === 'fail' ? 'due' : '');
+    const okClass = insp && res === 'pass' ? 'ok' : (insp && res === 'fail' ? 'fail' : 'none');
     const [x,y] = posFor(layer, num);
     const el = document.createElement('div');
     el.className = 'marker ' + okClass + (editMode ? ' editable' : '');
-    el.dataset.status = insp ? (res === 'pass' ? 'ผ่าน' : 'พบปัญหา') : 'ยังไม่ตรวจ';
+    el.dataset.status = insp ? (res === 'pass' ? 'ตรวจแล้ว' : 'พบปัญหา') : 'ยังไม่ได้ตรวจ';
     el.style.left = x+'%';
     el.style.top = y+'%';
     el.textContent = num;
@@ -817,7 +820,7 @@ function renderList(){
 
     const row = document.createElement('div');
     row.className = 'ext-row';
-    const statusClass = result==='pass' ? 'ok' : (insp ? 'due' : '');
+    const statusClass = result==='pass' ? 'ok' : (result==='fail' ? 'fail' : 'none');
     const sub = (layer==='ext' && rec.type) ? ' · '+rec.type : '';
     const subline = layer==='ext'
       ? (rec.year ? 'ผลิต '+rec.year : 'ยังไม่ระบุเดือน/ปีที่ผลิต')
@@ -832,7 +835,7 @@ function renderList(){
         <div class="t2">${subline}</div>
       </div>
       ${notifyBtn}
-      <div class="ext-status ${result==='pass'?'ok':'due'}">${result==='pass' ? 'ตรวจแล้ว' : (result==='fail' ? 'พบปัญหา' : 'รอตรวจ')}</div>
+      <div class="ext-status ${result==='pass'?'ok':(result==='fail'?'fail':'none')}">${result==='pass' ? 'ตรวจแล้ว' : (result==='fail' ? 'พบปัญหา' : 'ยังไม่ได้ตรวจ')}</div>
     `;
     row.addEventListener('click', (e)=>{ if(e.target.classList.contains('notify-row-btn')) return; openSheet(num); });
     wrap.appendChild(row);
@@ -1535,43 +1538,69 @@ async function handleScanResult(data, source='qr'){
 /* ===================== Export / report ===================== */
 function allRows(includePhoto){
   const out = [];
+  const pick = (...vals) => vals.find(v => v !== undefined && v !== null && String(v).trim() !== '') ?? '';
+  const normalizeResult = v => {
+    const x = String(v ?? '').trim().toLowerCase();
+    if(['pass','passed','ok','ผ่าน','ปกติ','ผ่าน / ปกติ','✓ ผ่าน / ปกติ','ตรวจแล้ว'].includes(x)) return 'ตรวจแล้ว';
+    if(['fail','failed','พบปัญหา','ไม่ผ่าน','ไม่ผ่าน / พบปัญหา','✕ ไม่ผ่าน / พบปัญหา'].includes(x)) return 'พบปัญหา';
+    return String(v ?? '');
+  };
+
   for(const layer of ['ext','cab']){
     for(const n of CONFIG[layer].numbers){
       const r = dataCache[layer][n] || {};
       for(const [m,h] of Object.entries(r.history||{})){
         if(layer==='cab'){
-          // Normalize ข้อมูลตู้น้ำ/ถังในตู้ก่อน Export เพื่อรองรับข้อมูลทั้งโครงสร้างใหม่และเก่า
+          // รองรับทั้งข้อมูลโครงสร้างใหม่และข้อมูลเก่า
           const cab = (h && typeof h.cabinet === 'object' && h.cabinet) || {};
           const tank = (h && typeof h.tank === 'object' && h.tank) || {};
-          const pick = (...vals) => vals.find(v => v !== undefined && v !== null && String(v).trim() !== '') ?? '';
-          const normalizeResult = v => {
-            const x = String(v ?? '').trim().toLowerCase();
-            if(['pass','passed','ok','ผ่าน','ปกติ','ผ่าน / ปกติ','✓ ผ่าน / ปกติ'].includes(x)) return 'ผ่าน / ปกติ';
-            if(['fail','failed','พบปัญหา','ไม่ผ่าน','ไม่ผ่าน / พบปัญหา','✕ ไม่ผ่าน / พบปัญหา'].includes(x)) return 'พบปัญหา';
-            return String(v ?? '');
-          };
+
           const cabinetResult = normalizeResult(pick(cab.result, h.cabinetResult, h.cabResult));
           const tankResult = normalizeResult(pick(tank.result, h.tankResult, h.extResult, h.fireExtinguisherResult));
-          // เดือน/ปีผลิตอาจอยู่ใน tank.year, tank.productionDate หรือฟิลด์เก่าที่ history โดยตรง
-          const tankYear = pick(tank.year, tank.productionDate, tank.productionMonth, tank.manufactureDate,
-                                h.tankYear, h.productionDate, h.productionMonth, h.manufactureDate, h.year, r.year);
+
+          // เดือน/ปีผลิตของ "ถังดับเพลิงภายในตู้"
+          const tankYear = pick(
+            tank.year, tank.productionDate, tank.productionMonth, tank.manufactureDate,
+            h.tankYear, h.productionDate, h.productionMonth, h.manufactureDate, h.year, r.year
+          );
           const tankType = pick(tank.type, tank.extType, h.tankType, h.type, r.type);
-          const overallResult = normalizeResult(pick(h.result,
-            (cabinetResult==='ผ่าน / ปกติ' && tankResult==='ผ่าน / ปกติ') ? 'ผ่าน / ปกติ' :
-            (cabinetResult || tankResult ? 'พบปัญหา' : '')
-          ));
-          const row = { ประเภท:'ตู้น้ำดับเพลิง', เลขที่:n, เดือน:m,
-            'ผลตรวจตู้น้ำดับเพลิง':cabinetResult, 'ผลตรวจถังดับเพลิงในตู้':tankResult,
-            'เดือน/ปีที่ผลิตถัง':tankYear, 'ชนิดถังดับเพลิง':tankType,
-            'ผลตรวจรวม':overallResult, ผู้ตรวจ:h.inspector||'',
-            วันที่บันทึก:h.date||'', หมายเหตุ:h.note||'' };
+
+          let overallRaw = pick(h.result);
+          if(!overallRaw){
+            if(cabinetResult === 'ตรวจแล้ว' && tankResult === 'ตรวจแล้ว') overallRaw = 'pass';
+            else if(cabinetResult || tankResult) overallRaw = 'fail';
+          }
+          const overallResult = normalizeResult(overallRaw);
+
+          const row = {
+            ประเภท:'ตู้น้ำดับเพลิง',
+            เลขที่:n,
+            เดือน:m,
+            'เดือน/ปีที่ผลิต':tankYear,
+            'ชนิดถังดับเพลิง':tankType,
+            'ผลตรวจ':overallResult,
+            'ผลตรวจตู้น้ำดับเพลิง':cabinetResult,
+            'ผลตรวจถังดับเพลิงในตู้':tankResult,
+            ผู้ตรวจ:h.inspector||'',
+            วันที่บันทึก:h.date||'',
+            หมายเหตุ:h.note||''
+          };
           if(includePhoto){ row.__photos = getHistoryPhotos(h); row.__photo = row.__photos[0] || null; }
           out.push(row);
         } else {
-          const row = { ประเภท:'ถังดับเพลิง', เลขที่:n, เดือน:m,
-            'เดือน/ปีที่ผลิต':r.year||'', ชนิดถัง:r.type||'',
-            ผลตรวจ:h.result||'', ผู้ตรวจ:h.inspector||'',
-            วันที่บันทึก:h.date||'', หมายเหตุ:h.note||'' };
+          const row = {
+            ประเภท:'ถังดับเพลิง',
+            เลขที่:n,
+            เดือน:m,
+            'เดือน/ปีที่ผลิต':r.year||'',
+            'ชนิดถังดับเพลิง':r.type||'',
+            'ผลตรวจ':normalizeResult(h.result),
+            'ผลตรวจตู้น้ำดับเพลิง':'',
+            'ผลตรวจถังดับเพลิงในตู้':'',
+            ผู้ตรวจ:h.inspector||'',
+            วันที่บันทึก:h.date||'',
+            หมายเหตุ:h.note||''
+          };
           if(includePhoto){ row.__photos = getHistoryPhotos(h); row.__photo = row.__photos[0] || null; }
           out.push(row);
         }
@@ -1579,6 +1608,21 @@ function allRows(includePhoto){
     }
   }
   return out;
+}
+
+function exportColumns(rows){
+  const preferred = [
+    'ประเภท','เลขที่','เดือน','เดือน/ปีที่ผลิต','ชนิดถังดับเพลิง','ผลตรวจ',
+    'ผลตรวจตู้น้ำดับเพลิง','ผลตรวจถังดับเพลิงในตู้','ผู้ตรวจ','วันที่บันทึก','หมายเหตุ'
+  ];
+  const found = new Set();
+  rows.forEach(r => Object.keys(r||{}).forEach(k => {
+    if(k !== '__photo' && k !== '__photos') found.add(k);
+  }));
+  return [
+    ...preferred.filter(k => found.has(k)),
+    ...[...found].filter(k => !preferred.includes(k))
+  ];
 }
 const escHtml = v => String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 
@@ -1598,7 +1642,7 @@ function buildDataToolsUI(){
   document.getElementById('viewAllData').onclick = ()=>{
     const rs = allRows(true);
     const w = window.open('', '_blank');
-    const cols = Object.keys(rs[0] || {ข้อมูล:'ไม่มีข้อมูล'}).filter(c=>c!=='__photo' && c!=='__photos');
+    const cols = rs.length ? exportColumns(rs) : ['ข้อมูล'];
     w.document.write(`<meta charset="utf-8"><title>ข้อมูลตรวจเช็คทั้งหมด</title>
       <style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}
       th,td{border:1px solid #bbb;padding:7px;text-align:left;font-size:12px;vertical-align:top}
@@ -1614,7 +1658,7 @@ function buildDataToolsUI(){
     toast('กำลังสร้างไฟล์ Excel...');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('รายงาน');
-    const cols = Object.keys(rows[0] || {ข้อมูล:''}).filter(c=>c!=='__photo' && c!=='__photos');
+    const cols = rows.length ? exportColumns(rows) : ['ข้อมูล'];
     ws.columns = [{header:'รูปป้ายตรวจสอบ', width:14}, ...cols.map(c=>({header:c, width:16}))];
     ws.getRow(1).font = {bold:true};
     for(let i=0;i<rows.length;i++){
@@ -1656,7 +1700,7 @@ function buildDataToolsUI(){
     if(!rs.length){toast('เดือนนี้ยังไม่มีข้อมูลสำหรับสร้าง PDF');return;}
     if(typeof html2pdf==='undefined'){toast('โหลดระบบ PDF ไม่สำเร็จ กรุณาต่ออินเทอร์เน็ต');return;}
     toast('กำลังสร้าง PDF พร้อมรูปภาพ...');
-    const cols=Object.keys(rs[0]).filter(c=>c!=='__photo'&&c!=='__photos');
+    const cols=exportColumns(rs);
     const report=document.createElement('div'); report.className='pdf-report';
     report.innerHTML=`<h1>รายงานตรวจเช็คอุปกรณ์ดับเพลิง คลัง ESC# 1-2</h1><div class="meta">ประจำเดือน ${m} · จำนวน ${rs.length} รายการ · สร้างเมื่อ ${new Date().toLocaleString('th-TH')}</div><table><thead><tr><th>รูปภาพ</th>${cols.map(c=>`<th>${escHtml(c)}</th>`).join('')}</tr></thead><tbody>${rs.map(r=>`<tr><td>${(r.__photos||[]).map(x=>`<img src="${x}" crossorigin="anonymous">`).join('')||'-'}</td>${cols.map(c=>`<td>${escHtml(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     document.body.appendChild(report);
