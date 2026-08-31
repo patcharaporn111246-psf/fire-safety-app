@@ -1000,15 +1000,21 @@ function showHistoryDetail(month,h,context={}){
   ]);
 
   if(layer==='cab'){
+    // รองรับทั้งข้อมูลรูปแบบใหม่และข้อมูลเดิมที่เก็บ year/type ไว้ที่ history โดยตรง
+    const cabData = h.cabinet || {};
+    const tankData = h.tank || {};
+    const tankResult = tankData.result || h.tankResult || '';
+    const tankYear = tankData.year || h.year || '';
+    const tankType = tankData.type || h.type || '';
     cards += historyDetailCard('รายละเอียดตู้น้ำดับเพลิง', [
-      ['ผลตรวจ', historyResultHtml(h.cabinet?.result)],
-      ['รายการตรวจสอบ', escHtml(historyChecklistText('cabinet',h.cabinet))]
+      ['ผลตรวจ', historyResultHtml(cabData.result || h.cabinetResult || '')],
+      ['รายการตรวจสอบ', escHtml(historyChecklistText('cabinet',cabData))]
     ]);
     cards += historyDetailCard('รายละเอียดถังดับเพลิงในตู้', [
-      ['ผลตรวจ', historyResultHtml(h.tank?.result)],
-      ['เดือน/ปีที่ผลิต', escHtml(h.tank?.year||'-')],
-      ['ชนิดถัง', escHtml(h.tank?.type||'-')],
-      ['รายการตรวจสอบ', escHtml(historyChecklistText('tank',h.tank))]
+      ['ผลตรวจ', historyResultHtml(tankResult)],
+      ['เดือน/ปีที่ผลิต', escHtml(tankYear||'-')],
+      ['ชนิดถัง', escHtml(tankType||'-')],
+      ['รายการตรวจสอบ', escHtml(historyChecklistText('tank',tankData))]
     ]);
   }else{
     cards += historyDetailCard('รายละเอียดถังดับเพลิง', [
@@ -1532,10 +1538,15 @@ function allRows(includePhoto){
       const r = dataCache[layer][n] || {};
       for(const [m,h] of Object.entries(r.history||{})){
         if(layer==='cab'){
+          // รองรับข้อมูลเก่าด้วย fallback เพื่อให้ export ไม่สูญหาย
+          const cabinetResult = h.cabinet?.result || h.cabinetResult || '';
+          const tankResult = h.tank?.result || h.tankResult || '';
+          const tankYear = h.tank?.year || h.year || '';
+          const tankType = h.tank?.type || h.type || '';
           const row = { ประเภท:'ตู้น้ำดับเพลิง', เลขที่:n, เดือน:m,
-            ผลตรวจตู้น้ำ:h.cabinet?.result||'', ผลตรวจถังในตู้:h.tank?.result||'',
-            'เดือน/ปีที่ผลิตถัง':h.tank?.year||'', ชนิดถัง:h.tank?.type||'',
-            ผลรวม:h.result||'', ผู้ตรวจ:h.inspector||'',
+            ผลตรวจตู้น้ำ:cabinetResult, ผลตรวจถังในตู้:tankResult,
+            'เดือน/ปีที่ผลิตถัง':tankYear, ชนิดถัง:tankType,
+            ผลรวม:h.result || ((cabinetResult==='pass' && tankResult==='pass') ? 'pass' : (cabinetResult || tankResult ? 'fail' : '')), ผู้ตรวจ:h.inspector||'',
             วันที่บันทึก:h.date||'', หมายเหตุ:h.note||'' };
           if(includePhoto){ row.__photos = getHistoryPhotos(h); row.__photo = row.__photos[0] || null; }
           out.push(row);
