@@ -93,8 +93,8 @@
     touch-action:none;
   }
   .marker:active{transform:translate(-50%,-50%) scale(.9);}
-  .marker.ok{background:var(--green);}
-  .marker.due{background:var(--red);}
+  .marker.ok{background:#2e8b57 !important;}
+  .marker.due{background:#c62828 !important;}
   .marker.editable{box-shadow:0 0 0 4px rgba(43,95,168,.25);cursor:grab;}
   .marker.dragging{cursor:grabbing;box-shadow:0 0 0 5px rgba(43,95,168,.45);z-index:30;transition:none;}
 
@@ -735,10 +735,12 @@ function renderMarkers(){
     const rec = dataCache[layer][num] || {history:{}};
     const insp = hasInspectionForMonth(rec, currentMonth);
     const res = monthResult(layer, rec, currentMonth);
-    const okClass = insp ? (res==='pass' ? 'ok' : 'due') : '';
+    // สีจุดสถานะ: ตรวจแล้ว/ผ่าน = เขียว, พบปัญหา = แดง, ยังไม่ตรวจ = สีเทา
+    const okClass = insp && res === 'pass' ? 'ok' : (insp && res === 'fail' ? 'due' : '');
     const [x,y] = posFor(layer, num);
     const el = document.createElement('div');
     el.className = 'marker ' + okClass + (editMode ? ' editable' : '');
+    el.dataset.status = insp ? (res === 'pass' ? 'ผ่าน' : 'พบปัญหา') : 'ยังไม่ตรวจ';
     el.style.left = x+'%';
     el.style.top = y+'%';
     el.textContent = num;
@@ -1538,15 +1540,30 @@ function allRows(includePhoto){
       const r = dataCache[layer][n] || {};
       for(const [m,h] of Object.entries(r.history||{})){
         if(layer==='cab'){
-          // รองรับข้อมูลเก่าด้วย fallback เพื่อให้ export ไม่สูญหาย
-          const cabinetResult = h.cabinet?.result || h.cabinetResult || '';
-          const tankResult = h.tank?.result || h.tankResult || '';
-          const tankYear = h.tank?.year || h.year || '';
-          const tankType = h.tank?.type || h.type || '';
+          // Normalize ข้อมูลตู้น้ำ/ถังในตู้ก่อน Export เพื่อรองรับข้อมูลทั้งโครงสร้างใหม่และเก่า
+          const cab = (h && typeof h.cabinet === 'object' && h.cabinet) || {};
+          const tank = (h && typeof h.tank === 'object' && h.tank) || {};
+          const pick = (...vals) => vals.find(v => v !== undefined && v !== null && String(v).trim() !== '') ?? '';
+          const normalizeResult = v => {
+            const x = String(v ?? '').trim().toLowerCase();
+            if(['pass','passed','ok','ผ่าน','ปกติ','ผ่าน / ปกติ','✓ ผ่าน / ปกติ'].includes(x)) return 'ผ่าน / ปกติ';
+            if(['fail','failed','พบปัญหา','ไม่ผ่าน','ไม่ผ่าน / พบปัญหา','✕ ไม่ผ่าน / พบปัญหา'].includes(x)) return 'พบปัญหา';
+            return String(v ?? '');
+          };
+          const cabinetResult = normalizeResult(pick(cab.result, h.cabinetResult, h.cabResult));
+          const tankResult = normalizeResult(pick(tank.result, h.tankResult, h.extResult, h.fireExtinguisherResult));
+          // เดือน/ปีผลิตอาจอยู่ใน tank.year, tank.productionDate หรือฟิลด์เก่าที่ history โดยตรง
+          const tankYear = pick(tank.year, tank.productionDate, tank.productionMonth, tank.manufactureDate,
+                                h.tankYear, h.productionDate, h.productionMonth, h.manufactureDate, h.year, r.year);
+          const tankType = pick(tank.type, tank.extType, h.tankType, h.type, r.type);
+          const overallResult = normalizeResult(pick(h.result,
+            (cabinetResult==='ผ่าน / ปกติ' && tankResult==='ผ่าน / ปกติ') ? 'ผ่าน / ปกติ' :
+            (cabinetResult || tankResult ? 'พบปัญหา' : '')
+          ));
           const row = { ประเภท:'ตู้น้ำดับเพลิง', เลขที่:n, เดือน:m,
-            ผลตรวจตู้น้ำ:cabinetResult, ผลตรวจถังในตู้:tankResult,
-            'เดือน/ปีที่ผลิตถัง':tankYear, ชนิดถัง:tankType,
-            ผลรวม:h.result || ((cabinetResult==='pass' && tankResult==='pass') ? 'pass' : (cabinetResult || tankResult ? 'fail' : '')), ผู้ตรวจ:h.inspector||'',
+            'ผลตรวจตู้น้ำดับเพลิง':cabinetResult, 'ผลตรวจถังดับเพลิงในตู้':tankResult,
+            'เดือน/ปีที่ผลิตถัง':tankYear, 'ชนิดถังดับเพลิง':tankType,
+            'ผลตรวจรวม':overallResult, ผู้ตรวจ:h.inspector||'',
             วันที่บันทึก:h.date||'', หมายเหตุ:h.note||'' };
           if(includePhoto){ row.__photos = getHistoryPhotos(h); row.__photo = row.__photos[0] || null; }
           out.push(row);
