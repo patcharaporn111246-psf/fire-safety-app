@@ -330,7 +330,7 @@
         <div class="check-actions">
           <button type="button" class="mini-btn" id="addCheckBtn">＋ เพิ่มรายการ</button>
           <button type="button" class="mini-btn" id="removeCheckBtn">− ลดรายการ</button>
-          <button type="button" class="mini-btn" id="editCheckBtn">✎ แก้ไขรายการ</button>
+          <button type="button" class="mini-btn" id="editCheckBtn">✎ แก้ไขรายการ (เฉพาะประเภท)</button>
         </div>
         <div class="checklist" id="checklist"></div>
       </div>
@@ -1127,6 +1127,11 @@ function cabFieldHtml(key, title, items, withInfo){
       <label style="margin-top:10px">ผลการตรวจเช็ค</label>
       <div class="result-toggle"><button type="button" data-r="pass">✓ ผ่าน / ปกติ</button><button type="button" data-r="fail">✕ ไม่ผ่าน / พบปัญหา</button></div>
       <label style="margin-top:10px">รายการตรวจสอบ</label>
+      <div class="check-actions" style="margin-top:8px">
+        <button type="button" class="mini-btn cabAddCheck">＋ เพิ่มรายการ</button>
+        <button type="button" class="mini-btn cabRemoveCheck">− ลดรายการ</button>
+        <button type="button" class="mini-btn cabEditCheck">✎ แก้ไขรายการ</button>
+      </div>
       <div class="checklist" style="margin-top:8px">${items.map((x,i)=>`<label class="check-item"><input type="checkbox" data-i="${i}">${x[1]}</label>`).join('')}</div>
     </div>`;
 }
@@ -1813,13 +1818,40 @@ async function removePointAt(layer, num){
   toast('ลบจุดหมายเลข ' + num + ' แล้ว');
 }
 
+/* ===================== Cabinet checklist manager ===================== */
+document.addEventListener('click', async (e)=>{
+  if(e.target.classList.contains('cabAddCheck') || e.target.classList.contains('cabRemoveCheck') || e.target.classList.contains('cabEditCheck')){
+    const key = e.target.closest('.cab-split')?.dataset.k;
+    if(!key) return;
+    const list = key==='cabinet' ? CONFIG.cab.checklist : CONFIG.ext.checklist;
+    if(e.target.classList.contains('cabAddCheck')){
+      const text = prompt('พิมพ์รายการตรวจสอบใหม่','');
+      if(!text) return;
+      list.push(['custom_'+Date.now(), text]);
+    }else if(e.target.classList.contains('cabRemoveCheck')){
+      const raw = prompt('ระบุลำดับรายการที่ต้องการลบ (1-'+list.length+')', list.length);
+      const i = Number(raw)-1;
+      if(!Number.isInteger(i)||i<0||i>=list.length) return toast('ลำดับไม่ถูกต้อง');
+      list.splice(i,1);
+    }else{
+      const i = Number(prompt('ระบุลำดับรายการที่ต้องการแก้ไข (1-'+list.length+')','1'))-1;
+      if(!Number.isInteger(i)||i<0||i>=list.length) return toast('ลำดับไม่ถูกต้อง');
+      const text = prompt('แก้ไขข้อความรายการตรวจสอบ', list[i][1]);
+      if(text) list[i][1]=text;
+    }
+    await saveChecklist(key==='cabinet' ? 'cab' : 'ext');
+    openSheetCab(currentNum);
+    toast('บันทึกรายการตรวจสอบแล้ว');
+  }
+});
+
 /* ===================== Checklist manager ===================== */
 document.getElementById('addCheckBtn').addEventListener('click', async ()=>{
   const text = prompt('พิมพ์รายการตรวจสอบใหม่', '');
   if(!text) return;
   cfg().checklist.push(['custom_'+Date.now(), text]);
   await saveChecklist(currentLayer);
-  if(document.getElementById('overlay').classList.contains('show') && currentLayer==='ext') renderChecklistSimple();
+  if(document.getElementById('overlay').classList.contains('show') && (currentLayer==='ext' || currentLayer==='cab')) renderChecklistSimple();
   toast('เพิ่มรายการตรวจสอบแล้ว');
 });
 document.getElementById('removeCheckBtn').addEventListener('click', async ()=>{
@@ -1829,7 +1861,7 @@ document.getElementById('removeCheckBtn').addEventListener('click', async ()=>{
   if(!Number.isInteger(i) || i<0 || i>=list.length){ toast('ลำดับไม่ถูกต้อง'); return; }
   list.splice(i, 1);
   await saveChecklist(currentLayer);
-  if(document.getElementById('overlay').classList.contains('show') && currentLayer==='ext') renderChecklistSimple();
+  if(document.getElementById('overlay').classList.contains('show') && (currentLayer==='ext' || currentLayer==='cab')) renderChecklistSimple();
   toast('ลบรายการแล้ว');
 });
 document.getElementById('editCheckBtn').addEventListener('click', async ()=>{
@@ -1839,7 +1871,7 @@ document.getElementById('editCheckBtn').addEventListener('click', async ()=>{
   const text = prompt('แก้ไขข้อความรายการตรวจสอบ', list[i][1]); if(!text) return;
   list[i][1] = text;
   await saveChecklist(currentLayer);
-  if(document.getElementById('overlay').classList.contains('show') && currentLayer==='ext') renderChecklistSimple();
+  if(document.getElementById('overlay').classList.contains('show') && (currentLayer==='ext' || currentLayer==='cab')) renderChecklistSimple();
   toast('แก้ไขรายการแล้ว');
 });
 
