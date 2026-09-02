@@ -630,6 +630,12 @@ const CAB_EXCEL_CHECK_MAP = {
   access:   { goodCol: 'G', badCol: 'F' }, // สิ่งกีดขวาง: ไม่มี(ผ่าน) / มี(ไม่ผ่าน)
   axe:      { goodCol: 'H', badCol: 'I' }  // ขวาน: มี(ผ่าน) / ไม่มี(ไม่ผ่าน)
 };
+// สำเนารายการตรวจสอบเริ่มต้น (ก่อนถูกโหลดค่าที่บันทึกไว้ทับ) ใช้เติมรายการใหม่ที่เพิ่มเข้ามาทีหลัง
+// ให้กับผู้ใช้ที่เคยบันทึกรายการตรวจสอบเวอร์ชันเก่าไว้แล้ว โดยไม่กระทบลำดับ/ index เดิม
+const DEFAULT_CHECKLISTS = {
+  ext: CONFIG.ext.checklist.map(item => [...item]),
+  cab: CONFIG.cab.checklist.map(item => [...item])
+};
 
 /* ===================== State ===================== */
 let currentLayer = 'ext';
@@ -720,6 +726,19 @@ async function loadChecklist(layer){
       if(Array.isArray(a) && a.length) CONFIG[layer].checklist = a;
     }catch(e){}
   }
+  // เติมรายการตรวจสอบเริ่มต้นที่ยังไม่มี (กรณีผู้ใช้เคยบันทึกรายการตรวจสอบเวอร์ชันเก่าไว้แล้ว
+  // ทำให้รายการที่เพิ่มใหม่ภายหลัง เช่น 'ข้อต่อ' และ 'ขวาน' หายไปเพราะถูกค่าที่บันทึกไว้ทับ)
+  // โดยจะต่อท้ายรายการเดิมเสมอ เพื่อไม่ให้ index ของรายการที่มีอยู่แล้วเปลี่ยน
+  const existingKeys = new Set(CONFIG[layer].checklist.map(([k])=>k));
+  let added = false;
+  (DEFAULT_CHECKLISTS[layer] || []).forEach(item=>{
+    if(!existingKeys.has(item[0])){
+      CONFIG[layer].checklist.push([...item]);
+      existingKeys.add(item[0]);
+      added = true;
+    }
+  });
+  if(added) await saveChecklist(layer);
 }
 async function saveChecklist(layer){
   await storeSet('checklist:'+layer, JSON.stringify(CONFIG[layer].checklist));
@@ -1779,19 +1798,49 @@ function buildDataToolsUI(){
       toast('เกิดข้อผิดพลาดในการสร้างไฟล์ Word กรุณาลองใหม่');
     }
   };
+  // แก้ไขค่าใน worksheet XML โดยตรง (ไม่ผ่าน ExcelJS) เพื่อไม่ให้รูปภาพ/ดรออิ้งในไฟล์เพี้ยน
+  // (ExcelJS มีบั๊กเรื่องสลับไฟล์รูปภาพเวลาโหลด-เขียนไฟล์ที่มีรูปเยอะ ๆ ทับกัน)
+  function setSheetCellText(xmlDoc, cellRef, text){
+    const rowNum = cellRef.match(/\d+/)[0];
+    const rows = xmlDoc.getElementsByTagName('row');
+    let rowEl = null;
+    for(let i=0;i<rows.length;i++){ if(rows[i].getAttribute('r')===rowNum){ rowEl = rows[i]; break; } }
+    if(!rowEl) return false;
+    const cells = rowEl.getElementsByTagName('c');
+    let cellEl = null;
+    for(let i=0;i<cells.length;i++){ if(cells[i].getAttribute('r')===cellRef){ cellEl = cells[i]; break; } }
+    if(!cellEl) return false;
+    // ล้างลูกเดิม (<v>/<is> เดิม) ออกก่อน
+    while(cellEl.firstChild) cellEl.removeChild(cellEl.firstChild);
+    cellEl.setAttribute('t','inlineStr');
+    const ns = xmlDoc.documentElement.namespaceURI; // ต้องสร้าง element ใน namespace เดียวกับเอกสาร
+    const isEl = xmlDoc.createElementNS(ns, 'is');
+    const tEl = xmlDoc.createElementNS(ns, 't');
+    tEl.setAttribute('xml:space','preserve');
+    tEl.textContent = text;
+    isEl.appendChild(tEl);
+    cellEl.appendChild(isEl);
+    return true;
+  }
+
   document.getElementById('exportCabExcelAll').onclick = async ()=>{
     const m = currentMonth;
-    if(typeof ExcelJS === 'undefined'){ toast('ไม่สามารถโหลดไลบรารี Excel ได้ (ต้องต่ออินเทอร์เน็ต)'); return; }
+    if(typeof PizZip==='undefined'){ toast('ไม่สามารถโหลดระบบสร้างไฟล์ Excel ได้ (ต้องต่ออินเทอร์เน็ต)'); return; }
     toast('กำลังสร้างไฟล์ Excel...');
     try{
       await ensureLayerLoaded('cab'); // การันตีว่าโหลดข้อมูลตู้น้ำดับเพลิงแล้ว แม้ยังไม่เคยสลับไปแท็บตู้น้ำ
 
-      const wb = new ExcelJS.Workbook();
       const binary = atob(CAB_INSPECTION_TEMPLATE_B64);
       const bytes = new Uint8Array(binary.length);
       for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
-      await wb.xlsx.load(bytes.buffer);
-      const ws = wb.worksheets[0];
+      const zip = new PizZip(bytes);
+      const sheetPath = 'xl/worksheets/sheet1.xml';
+      const sheetXmlText = zip.file(sheetPath).asText();
+      const xmlDoc = new DOMParser().parseFromString(sheetXmlText, 'application/xml');
+
+      // หมายเหตุ: ไม่แก้ข้อความในช่อง "สถานที่ : ระบุพื้นที่..." (A4) เพราะไฟล์ต้นฉบับมีป้ายชื่อ
+      // "ESC1-2" เป็นรูปวาดลอยทับช่องนี้อยู่แล้ว การเขียนทับข้อความในเซลล์จะไปซ้อนกับรูปวาดเดิม
+      // ทำให้ตัวหนังสือเบิ้ลกันจนอ่านไม่ออก จึงปล่อยให้เป็นไปตามไฟล์ต้นฉบับ
 
       // แถวของตำแหน่งที่ 1 อยู่แถว 9 (ตำแหน่ง n -> แถว n+8) ตามฟอร์ม "รายการตรวจประจำตู้ดับเพลิง"
       let anyData = false;
@@ -1807,7 +1856,7 @@ function buildDataToolsUI(){
           if(idx === -1) return; // รายการตรวจนี้ถูกลบออกจากเช็คลิสต์ของแอปไปแล้ว
           const isChecked = checkedSet.has(String(idx));
           const col = isChecked ? cols.goodCol : cols.badCol;
-          ws.getCell(col + row).value = '\u2713';
+          setSheetCellText(xmlDoc, col + row, '\u2713');
         });
       });
 
@@ -1819,11 +1868,15 @@ function buildDataToolsUI(){
       const mm2 = String(today.getMonth()+1).padStart(2,'0');
       const yyyy = today.getFullYear() + 543;
       const dateStr = 'วันที่ ' + dd + '/' + mm2 + '/' + yyyy;
-      ['A53','G53','M53'].forEach(c => { ws.getCell(c).value = dateStr; });
+      ['A53','G53','M53'].forEach(c => setSheetCellText(xmlDoc, c, dateStr));
 
-      const buf = await wb.xlsx.writeBuffer();
+      const newSheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+        new XMLSerializer().serializeToString(xmlDoc.documentElement);
+      zip.file(sheetPath, newSheetXml);
+
+      const out = zip.generate({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      a.href = URL.createObjectURL(out);
       a.download = 'แบบตรวจตู้น้ำดับเพลิง_'+m+'.xlsx';
       a.click(); URL.revokeObjectURL(a.href);
       toast('Export Excel เรียบร้อย');
