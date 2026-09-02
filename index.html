@@ -620,15 +620,16 @@ const CONFIG = {
 };
 
 /* หมายเหตุ: 'coupling' และ 'access' และ 'axe' ผูกกับคอลัมน์ในแบบฟอร์ม Excel "ตรวจตู้น้ำดับเพลิง"
-   (ข้อต่อ / สายฉีด / สิ่งกีดขวาง / ขวาน) — ดู CAB_EXCEL_CHECK_MAP ด้านล่าง */
+   (ข้อต่อ / สายฉีด / สิ่งกีดขวาง / ขวาน) — ดู CAB_EXCEL_CHECK_MAP ด้านล่าง
+   กติกา: ถ้าติ๊กรายการนั้นในแอป -> ถือว่า "ปกติ/มี", ถ้าไม่ได้ติ๊ก -> ถือว่า "ผิดปกติ/ไม่มี" */
 const CAB_EXCEL_CHECK_MAP = {
   // key ตรงกับ checklist key ของ CONFIG.cab.checklist
-  // goodCol = คอลัมน์ที่ติ๊กเมื่อรายการนั้น "ถูกติ๊กในแอป" (ผ่าน/ปกติ/มี)
-  // badCol  = คอลัมน์ที่ติ๊กเมื่อรายการนั้น "ไม่ถูกติ๊กในแอป" (ไม่ผ่าน/ไม่ปกติ/ไม่มี)
-  coupling: { goodCol: 'B', badCol: 'C' }, // ข้อต่อ: ปกติ / ไม่ปกติ
-  hose:     { goodCol: 'D', badCol: 'E' }, // สายฉีด: ปกติ / ไม่ปกติ
-  access:   { goodCol: 'G', badCol: 'F' }, // สิ่งกีดขวาง: ไม่มี(ผ่าน) / มี(ไม่ผ่าน)
-  axe:      { goodCol: 'H', badCol: 'I' }  // ขวาน: มี(ผ่าน) / ไม่มี(ไม่ผ่าน)
+  // checkedCol   = คอลัมน์ที่ติ๊กเมื่อรายการนั้น "ถูกติ๊กในแอป" (ปกติ/มี)
+  // uncheckedCol = คอลัมน์ที่ติ๊กเมื่อรายการนั้น "ไม่ถูกติ๊กในแอป" (ผิดปกติ/ไม่มี)
+  coupling: { checkedCol: 'B', uncheckedCol: 'C' }, // ข้อต่อ: ปกติ / ไม่ปกติ
+  hose:     { checkedCol: 'D', uncheckedCol: 'E' }, // สายฉีด: ปกติ / ไม่ปกติ
+  access:   { checkedCol: 'F', uncheckedCol: 'G' }, // สิ่งกีดขวาง: มี(ติ๊ก) / ไม่มี(ไม่ติ๊ก)
+  axe:      { checkedCol: 'H', uncheckedCol: 'I' }  // ขวาน: มี(ติ๊ก) / ไม่มี(ไม่ติ๊ก)
 };
 // สำเนารายการตรวจสอบเริ่มต้น (ก่อนถูกโหลดค่าที่บันทึกไว้ทับ) ใช้เติมรายการใหม่ที่เพิ่มเข้ามาทีหลัง
 // ให้กับผู้ใช้ที่เคยบันทึกรายการตรวจสอบเวอร์ชันเก่าไว้แล้ว โดยไม่กระทบลำดับ/ index เดิม
@@ -1682,7 +1683,7 @@ function buildDataToolsUI(){
   wrap.style.cssText = 'display:flex;gap:7px;flex-wrap:wrap;margin:8px 0;width:100%';
   wrap.innerHTML = `
     <button class="editbtn" id="viewAllData">📋 ดูข้อมูลทั้งหมด (พร้อมรูป)</button>
-    <button class="editbtn" id="exportExtExcelAll">🧯 Export Excel ถังดับเพลิง</button>
+    <button class="editbtn" id="exportExtExcelAll">🧯🚿 Export Excel เดือนนี้</button>
     <button class="editbtn" id="exportExtWordAll">🧯🚿 Export Word แบบตรวจถังดับเพลิง</button>
     <button class="editbtn" id="exportCabExcelAll">🚿 Export Excel แบบตรวจตู้น้ำดับเพลิง</button>
     <button class="editbtn" id="printReport">📄 ดาวน์โหลด PDF เดือนนี้</button>
@@ -1737,10 +1738,13 @@ function buildDataToolsUI(){
     toast('Export Excel เรียบร้อย');
   }
 
-  // Export แยกประเภท ป้องกันข้อมูลถังดับเพลิงและตู้น้ำปนกัน
-  document.getElementById('exportExtExcelAll').onclick = ()=>{
-    const rs = fireExtRows(true).filter(r=>r['ประเภท']==='ถังดับเพลิง');
-    exportXlsx(rs, 'รายงานตรวจถังดับเพลิง_'+currentMonth+'.xlsx');
+  // Export ข้อมูลตรวจของเดือนปัจจุบันทั้งหมด: ถังดับเพลิง + ตู้น้ำดับเพลิง + ถังดับเพลิงในตู้น้ำดับเพลิง พร้อมรูปที่แนบ
+  document.getElementById('exportExtExcelAll').onclick = async ()=>{
+    const m = currentMonth;
+    await ensureLayerLoaded('cab'); // การันตีว่าข้อมูลตู้น้ำดับเพลิงถูกโหลดแล้ว แม้ยังไม่เคยสลับไปแท็บตู้น้ำ
+    const rs = allRows(true).filter(r=>r['เดือน']===m);
+    if(!rs.length){ toast('เดือนนี้ยังไม่มีข้อมูลสำหรับ Export'); return; }
+    exportXlsx(rs, 'รายงานตรวจเดือน_'+m+'.xlsx');
   };
 
   document.getElementById('exportExtWordAll').onclick = async ()=>{
@@ -1855,7 +1859,7 @@ function buildDataToolsUI(){
           const idx = CONFIG.cab.checklist.findIndex(([k])=>k===key);
           if(idx === -1) return; // รายการตรวจนี้ถูกลบออกจากเช็คลิสต์ของแอปไปแล้ว
           const isChecked = checkedSet.has(String(idx));
-          const col = isChecked ? cols.goodCol : cols.badCol;
+          const col = isChecked ? cols.checkedCol : cols.uncheckedCol;
           setSheetCellText(xmlDoc, col + row, '\u2713');
         });
       });
