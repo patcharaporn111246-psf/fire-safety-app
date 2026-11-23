@@ -1809,7 +1809,7 @@ function buildDataToolsUI(){
     <button class="editbtn" id="exportExtExcelAll">🧯🚿🔔 Export Excel เดือนนี้ (ทุกประเภท)</button>
     <button class="editbtn" id="exportExtWordAll">🧯🚿 Export Word แบบตรวจถังดับเพลิง</button>
     <button class="editbtn" id="exportCabExcelAll">🚿 Export Excel แบบตรวจตู้น้ำดับเพลิง</button>
-    <button class="editbtn" id="exportFaExcel">🔔 Export แบบฟอร์มตรวจสัญญาณเตือน (Excel)</button>
+    <button class="editbtn" id="exportFaExcel">🔔 Export Excel Fire Alarm</button>
     <button class="editbtn" id="printReport">📄 ดาวน์โหลด PDF เดือนนี้</button>
     <button class="editbtn" id="monthlySummary">📊 สรุปผลรายเดือน (ดูด่วน)</button>`;
   bar.insertAdjacentElement('afterend', wrap);
@@ -1872,56 +1872,56 @@ function buildDataToolsUI(){
   };
 
 
-  // Export แบบฟอร์มตรวจสัญญาณเตือน (QSHE-FM-ESC(WH)-009) ตามผลที่กรอกในแอป: ใช้ได้ / ใช้ไม่ได้
+  // Export แบบฟอร์มตรวจสัญญาณเตือน (QSHE-FM-ESC(WH)-009): แก้เฉพาะค่าในเซลล์/กล่องลายเซ็นของไฟล์ต้นฉบับ ไม่ปรับรูปแบบอื่น
   document.getElementById('exportFaExcel').onclick = async ()=>{
     const m = currentMonth;
-    if(typeof ExcelJS === 'undefined'){ toast('ไม่สามารถโหลดไลบรารี Excel ได้ (ต้องต่ออินเทอร์เน็ต)'); return; }
+    if(typeof PizZip === 'undefined'){ toast('ไม่สามารถโหลดไลบรารีได้ (ต้องต่ออินเทอร์เน็ต)'); return; }
     toast('กำลังสร้างแบบฟอร์มตรวจสัญญาณเตือน...');
     try{
       await ensureLayerLoaded('fa');
       const bin = atob(FA_FORM_TEMPLATE_B64); const bytes = new Uint8Array(bin.length);
       for(let k=0;k<bin.length;k++) bytes[k]=bin.charCodeAt(k);
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(bytes.buffer);
-      const ws = wb.worksheets[0];
+      const zip = new PizZip(bytes);
+      const esc = (t)=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       const thaiMonths=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
       const [yy,mm] = m.split('-'); const monthName = thaiMonths[parseInt(mm,10)-1]||mm; const yearBE = parseInt(yy,10)+543;
-      ws.getCell('B2').value = `บันทึกการตรวจเช็คสัญญาณเตือน เดือน ${monthName} ปี ${yearBE}`;
-      const base = {name:'TH SarabunPSK', size:18};
-      const thin = {style:'thin'};
+      let sheet = zip.file('xl/worksheets/sheet1.xml').asText();
+      const setCell = (ref, text)=>{
+        const re = new RegExp('<c r="'+ref+'"( s="\\d+")?(?: t="[a-z]+")?(?:/>|>.*?</c>)');
+        if(!re.test(sheet)) return;
+        sheet = sheet.replace(re,(all,st)=>'<c r="'+ref+'"'+(st||'')+' t="inlineStr"><is><t xml:space="preserve">'+esc(text)+'</t></is></c>');
+      };
+      setCell('B2', `บันทึกการตรวจเช็คสัญญาณเตือน เดือน ${monthName} ปี ${yearBE}`);
       const inspectors = {}; let lastDate = null;
       CONFIG.fa.numbers.forEach(n=>{
         const row = 6 + n;                       // แถวที่ 7 = Alarm No.1
         const h = (dataCache.fa[n]?.history||{})[m];
-        const cE = ws.getCell(row,5), cF = ws.getCell(row,6), cG = ws.getCell(row,7), cH = ws.getCell(row,8);
-        [cE,cF,cG,cH].forEach(c=>{ c.value = null; c.font = base; c.alignment = {horizontal:'center',vertical:'middle',wrapText:true}; c.border = {top:thin,left:thin,bottom:thin,right:thin}; });
         if(!h) return;
         const ok = h.result === 'pass';
-        (ok ? cE : cF).value = '✓';
-        cG.value = h.inspector || '';
+        setCell((ok?'E':'F')+row, '✓');
+        if(h.inspector) setCell('G'+row, h.inspector);
         let note = h.note || '';
         if(!ok && !note){
           const items = h.items || {};
           const bad = CONFIG.fa.checklist.filter(([k])=>!items[k]).map(([,t])=>t);
           if(bad.length) note = 'ไม่ผ่าน: ' + bad.join(', ');
         }
-        cH.value = note; cH.font = {name:'TH SarabunPSK', size:14}; cH.alignment = {horizontal:'left',vertical:'middle',wrapText:true};
+        if(note) setCell('H'+row, note);
         if(h.inspector) inspectors[h.inspector] = (inspectors[h.inspector]||0)+1;
         if(h.date){ const d = new Date(h.date); if(!isNaN(d) && (!lastDate || d > lastDate)) lastDate = d; }
       });
-      // ลายเซ็นผู้ตรวจ + วันที่ เดือน ปี ด้านล่าง
+      zip.file('xl/worksheets/sheet1.xml', sheet);
+      // กล่องลายเซ็น: ใส่ชื่อผู้ตรวจในกล่องแรก และวันที่ตรวจรูปแบบ 23/11/2569 ในทุกกล่อง
       const topInspector = Object.entries(inspectors).sort((a,b)=>b[1]-a[1])[0]?.[0] || '';
       const sd = lastDate || new Date();
-      const dateText = `วันที่ ${sd.getDate()} เดือน ${thaiMonths[sd.getMonth()]} ปี ${sd.getFullYear()+543}`;
-      const sf = {name:'TH SarabunPSK', size:16};
-      const sig = (row, text)=>{ ws.mergeCells(row,5,row,8); const c = ws.getCell(row,5); c.value = text; c.font = sf; c.alignment = {horizontal:'center',vertical:'middle'}; };
-      sig(67, 'ลงชื่อ ................................................ ผู้ตรวจ');
-      sig(68, topInspector ? `( ${topInspector} )` : '( ................................................ )');
-      sig(69, dateText);
-      ws.pageSetup = Object.assign({}, ws.pageSetup, {orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0});
-      const buf = await wb.xlsx.writeBuffer();
+      const dateText = String(sd.getDate()).padStart(2,'0')+'/'+String(sd.getMonth()+1).padStart(2,'0')+'/'+(sd.getFullYear()+543);
+      let dr = zip.file('xl/drawings/drawing1.xml').asText();
+      if(topInspector) dr = dr.replace(/\(\.{10,}\)/, '( '+esc(topInspector)+' )');
+      dr = dr.replace(/\.{8,}\/\.{8,}\/\.{8,}/g, dateText);   // ทั้ง 3 กล่อง (ผู้ตรวจสอบ / จป. / ผู้จัดการคลัง)
+      zip.file('xl/drawings/drawing1.xml', dr);
+      const out = zip.generate({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression:'DEFLATE'});
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      a.href = URL.createObjectURL(out);
       a.download = 'แบบฟอร์มตรวจสัญญาณเตือน_'+m+'.xlsx'; a.click(); URL.revokeObjectURL(a.href);
       toast('Export แบบฟอร์มตรวจสัญญาณเตือนเรียบร้อย');
     }catch(e){ console.error(e); toast('สร้างไฟล์ Excel ไม่สำเร็จ'); }
